@@ -6,6 +6,7 @@ import PerfBadges from '../components/PerfBadges'
 import SerialCandidates from '../components/SerialCandidates'
 import { autoReasonToMessage, reasonToMessage, scan, type ScanResponse } from '../lib/api'
 import { useDevice, useDevices } from '../hooks/useDevice'
+import { useI18n } from '../i18n'
 
 /** 실시간 스캔 간격. OCR 자체가 ~200ms 라 사실상 연속으로 돈다. */
 const POLL_INTERVAL_MS = 150
@@ -13,6 +14,7 @@ const POLL_INTERVAL_MS = 150
 
 export default function ScanPage() {
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   // 'live'    : 카메라를 계속 훑으며 시리얼을 찾는 중
   // 'confirm' : 찾았다. 화면을 멈추고 사용자 확인을 기다린다.
@@ -144,12 +146,8 @@ export default function ScanPage() {
   return (
     <Layout
       step={1}
-      title={mode === 'confirm' ? '이 시리얼이 맞습니까?' : '시리얼 번호 인식'}
-      subtitle={
-        mode === 'confirm'
-          ? '자동으로 인식해 화면을 멈췄습니다. 번호를 확인하고 진행하세요.'
-          : '기기 라벨을 카메라에 비추면 자동으로 인식합니다. PP-OCRv6 이 DX-M1 NPU 에서 동작합니다.'
-      }
+      title={mode === 'confirm' ? t('scan.confirmTitle') : t('scan.title')}
+      subtitle={mode === 'confirm' ? t('scan.confirmSubtitle') : t('scan.subtitle')}
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <CameraStream frozenFrame={mode === 'confirm' ? (result?.frame ?? null) : null} />
@@ -164,24 +162,22 @@ export default function ScanPage() {
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dx-cyan opacity-60" />
                     <span className="relative inline-flex h-3 w-3 rounded-full bg-dx-cyan" />
                   </span>
-                  <span className="font-semibold">실시간 인식 중</span>
+                  <span className="font-semibold">{t('scan.live')}</span>
                 </div>
 
                 <p className="mt-3 text-sm text-dx-muted">
                   <code className="font-mono text-dx-text">S/N:</code>{' '}
                   <code className="font-mono text-dx-text">SN:</code>{' '}
                   <code className="font-mono text-dx-text">SERIAL:</code>{' '}
-                  <code className="font-mono text-dx-text">시리얼:</code>{' '}
-                  <code className="font-mono text-dx-text">序列号:</code> 뒤의 값을
-                  공백 전까지 그대로 읽습니다. 신뢰도{' '}
-                  {live ? (live.autoConfidence * 100).toFixed(0) : 90}% 이상이면
-                  자동으로 화면을 멈춥니다.
+                  <code className="font-mono text-dx-text">序列号:</code>{' '}
+                  {t('scan.rule', {
+                    threshold: live ? (live.autoConfidence * 100).toFixed(0) : 90,
+                  })}
                 </p>
 
                 {rejectedSerial ? (
                   <p className="mt-2 text-sm text-dx-amber">
-                    <span className="font-mono">{rejectedSerial}</span> 는 방금 물린
-                    번호라 건너뜁니다. 다른 라벨을 비추거나 아래에서 직접 인식하세요.
+                    {t('scan.rejected', { serial: rejectedSerial })}
                   </p>
                 ) : (
                   hint && <p className="mt-2 text-sm text-dx-amber">{hint}</p>
@@ -192,7 +188,7 @@ export default function ScanPage() {
 
               {live && live.rawTexts.length > 0 && (
                 <div className="dx-card p-4">
-                  <p className="dx-label mb-2">지금 읽히는 텍스트</p>
+                  <p className="dx-label mb-2">{t('scan.readingNow')}</p>
                   <ul className="space-y-1">
                     {live.rawTexts.slice(0, 6).map((t, i) => (
                       <li key={`${t}-${i}`} className="truncate font-mono text-sm text-dx-text">
@@ -209,34 +205,36 @@ export default function ScanPage() {
                 disabled={busy}
                 className="dx-btn-ghost w-full"
               >
-                {busy ? '인식 중…' : '지금 바로 인식 (스페이스바)'}
+                {busy ? t('scan.manualBusy') : t('scan.manual')}
               </button>
             </>
           ) : (
             <>
               {/* --- 확인 --- */}
               <div className="dx-card border-dx-cyan/40 p-5">
-                <p className="dx-label mb-1">인식된 시리얼</p>
+                <p className="dx-label mb-1">{t('scan.recognized')}</p>
                 <p className="font-mono text-3xl font-bold tracking-wide text-dx-cyan">
                   {selected}
                 </p>
                 <p className="mt-2 text-sm text-dx-muted">
-                  신뢰도{' '}
+                  {t('scan.confidence')}{' '}
                   <span className="font-mono text-dx-text">
                     {result ? (result.confidence * 100).toFixed(1) : '—'}%
                   </span>
                   {result?.candidates[0]?.prefix && (
-                    <> · 표기 {result.candidates[0].prefix}</>
+                    <> · {t('scan.marker')} {result.candidates[0].prefix}</>
                   )}
                 </p>
 
                 <p className="mt-2 text-sm">
                   {lookupLoading ? (
-                    <span className="text-dx-muted">등록 여부 확인 중…</span>
+                    <span className="text-dx-muted">{t('scan.checking')}</span>
                   ) : registered ? (
-                    <span className="text-dx-green">등록된 기기 — {registered.model}</span>
+                    <span className="text-dx-green">
+                      {t('scan.registered', { model: registered.model })}
+                    </span>
                   ) : (
-                    <span className="text-dx-amber">레지스트리에 없는 시리얼입니다.</span>
+                    <span className="text-dx-amber">{t('scan.unregistered')}</span>
                   )}
                 </p>
               </div>
@@ -248,10 +246,10 @@ export default function ScanPage() {
                   onClick={() => selected && navigate(`/result/${encodeURIComponent(selected)}`)}
                   className="dx-btn-primary w-full py-4 text-lg"
                 >
-                  맞습니다 · QR 생성 →
+                  {t('scan.accept')}
                 </button>
                 <button type="button" onClick={resume} className="dx-btn-ghost w-full">
-                  아니요 · 다시 스캔
+                  {t('scan.reject')}
                 </button>
                 {!lookupLoading && !registered && selected && (
                   <button
@@ -261,7 +259,7 @@ export default function ScanPage() {
                     }
                     className="dx-btn-ghost w-full"
                   >
-                    이 기기 등록하기
+                    {t('scan.registerThis')}
                   </button>
                 )}
               </div>
@@ -279,7 +277,7 @@ export default function ScanPage() {
               {result && result.rawTexts.length > 0 && (
                 <details className="dx-card p-4">
                   <summary className="cursor-pointer text-sm text-dx-muted">
-                    OCR 원본 텍스트 {result.rawTexts.length}건
+                    {t('scan.rawTexts', { count: result.rawTexts.length })}
                   </summary>
                   <ul className="mt-3 space-y-1">
                     {result.rawTexts.map((t, i) => (
@@ -304,12 +302,12 @@ export default function ScanPage() {
             onClick={() => navigate('/register')}
             className="dx-btn-ghost w-full"
           >
-            + 기기 사전 등록
+            {t('scan.preRegister')}
           </button>
 
           <details className="dx-card p-4">
             <summary className="cursor-pointer text-sm text-dx-muted">
-              라벨 없이 시연하기 (등록된 시리얼 직접 선택 · {devices.length}대)
+              {t('scan.demoPick', { count: devices.length })}
             </summary>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {devices.map((d) => (
@@ -327,7 +325,7 @@ export default function ScanPage() {
                 onClick={() => navigate('/devices')}
                 className="rounded-lg border border-dx-border px-3 py-1.5 text-xs text-dx-muted hover:text-dx-cyan"
               >
-                기기 관리 →
+                {t('scan.manageDevices')}
               </button>
             </div>
           </details>

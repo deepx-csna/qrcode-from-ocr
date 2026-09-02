@@ -96,6 +96,18 @@ cd qrcode-from-ocr
 
 没有标签时，可在扫描页底部的 `라벨 없이 시연하기` 中直接选择序列号，只演示第 3–4 步。
 
+## 界面语言
+
+右上角的 **`KO` / `EN` / `中`** 按钮可在韩语、英语、中文之间切换。选择会保存在浏览器中，
+重新打开仍然有效；首次访问时按浏览器语言判断（`zh*` → 中文，`en*` → 英语，其余为韩语）。
+
+翻译的只是**界面文字**。已注册的设备数据（部署位置等）是用户填写的内容，按原样显示。
+默认的 8 台种子设备使用韩语地名，若要面向其他语种演示，请修改
+`data/seed_devices.json`。
+
+如需调整措辞或新增语言，只需改 `web/src/i18n/index.tsx` 一个文件。
+词典以韩语键为类型基准，其他语言漏掉键时 `npm run build` 会报类型错误。
+
 ---
 
 ## 实时自动识别
@@ -276,6 +288,7 @@ qrcode-from-ocr/
 │   ├── ocr_engine.{hpp,cpp}      PP-OCRv6 推理（取自 DEEPX dx-demos）
 │   └── third_party/              cpp-httplib、nlohmann/json
 ├── web/                          Vite + React + TypeScript + Tailwind
+│   ├── src/i18n/index.tsx        韩/英/中 词典（无依赖）
 │   └── dist/                     ★ 构建产物已提交 —— 无需 Node 即可运行
 ├── models/                       8 个 .dxnn + 字典（372 MB）
 ├── data/seed_devices.json        8 台种子设备

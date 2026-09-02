@@ -1,15 +1,17 @@
 import type { OcrPerf } from '../lib/api'
+import { useI18n } from '../i18n'
 
 /**
  * NPU 추론 지연을 보여준다. 데모에서 "이게 NPU 로 돌고 있다"를
  * 설명하는 핵심 근거라 항상 노출한다.
  */
 export default function PerfBadges({ perf }: { perf: OcrPerf }) {
+  const { t } = useI18n()
   const items = [
-    { label: '검출', value: `${perf.detMs.toFixed(1)} ms` },
-    { label: '인식', value: `${perf.recMs.toFixed(1)} ms` },
-    { label: '전체', value: `${perf.e2eMs.toFixed(1)} ms` },
-    { label: '텍스트 박스', value: `${perf.numBoxes}` },
+    { label: t('perf.det'), value: `${perf.detMs.toFixed(1)} ms` },
+    { label: t('perf.rec'), value: `${perf.recMs.toFixed(1)} ms` },
+    { label: t('perf.total'), value: `${perf.e2eMs.toFixed(1)} ms` },
+    { label: t('perf.boxes'), value: `${perf.numBoxes}` },
   ]
 
   return (

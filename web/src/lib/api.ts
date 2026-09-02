@@ -1,6 +1,7 @@
 // C++ 서버(serial_ocr_server) API 클라이언트
 
 import type { DeviceInfo } from '../data/devices'
+import { tr } from '../i18n'
 
 export interface SerialCandidate {
   text: string
@@ -70,7 +71,7 @@ export async function scan(
     throw new Error(reasonToMessage(reason))
   }
   if (!body) {
-    throw new Error('서버 응답을 해석하지 못했습니다.')
+    throw new Error(tr('error.badResponse'))
   }
   return body as ScanResponse
 }
@@ -78,7 +79,7 @@ export async function scan(
 export async function fetchConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config')
   if (!res.ok) {
-    throw new Error('서버 설정을 가져오지 못했습니다.')
+    throw new Error(tr('error.serverConfig'))
   }
   return (await res.json()) as ServerConfig
 }
@@ -87,11 +88,12 @@ export async function fetchConfig(): Promise<ServerConfig> {
 export function autoReasonToMessage(res: ScanResponse): string {
   switch (res.autoReason) {
     case 'low_confidence':
-      return `신뢰도 ${(res.confidence * 100).toFixed(0)}% — 임계값 ${(
-        res.autoConfidence * 100
-      ).toFixed(0)}% 미만입니다. 라벨을 더 가까이, 정면으로 비추세요.`
+      return tr('error.lowConfidence', {
+        confidence: (res.confidence * 100).toFixed(0),
+        threshold: (res.autoConfidence * 100).toFixed(0),
+      })
     case 'no_serial':
-      return 'S/N 표기를 찾는 중…'
+      return tr('error.noSerialYet')
     default:
       return ''
   }
@@ -100,15 +102,15 @@ export function autoReasonToMessage(res: ScanResponse): string {
 export function reasonToMessage(reason: string | undefined): string {
   switch (reason) {
     case 'no_serial_found':
-      return '시리얼 번호를 찾지 못했습니다. 라벨을 가이드 안에 맞추고 다시 시도하세요.'
+      return tr('error.noSerialFound')
     case 'camera_unavailable':
-      return '카메라를 열 수 없습니다. config.sh 의 DX_CAMERA_IDX 를 확인하세요.'
+      return tr('error.cameraUnavailable')
     case 'no_frame':
-      return '아직 카메라 프레임이 준비되지 않았습니다. 잠시 후 다시 시도하세요.'
+      return tr('error.noFrame')
     case 'ocr_error':
-      return 'OCR 추론 중 오류가 발생했습니다. 서버 로그를 확인하세요.'
+      return tr('error.ocr')
     default:
-      return reason ? `요청에 실패했습니다 (${reason}).` : '요청에 실패했습니다.'
+      return reason ? tr('error.genericWith', { reason }) : tr('error.generic')
   }
 }
 
@@ -140,7 +142,7 @@ export interface RegisterOutcome {
 export async function fetchDevices(): Promise<DeviceInfo[]> {
   const res = await fetch('/api/devices')
   if (!res.ok) {
-    throw new Error('기기 목록을 가져오지 못했습니다.')
+    throw new Error(tr('error.deviceList'))
   }
   return (await res.json()) as DeviceInfo[]
 }
@@ -152,7 +154,7 @@ export async function fetchDevice(serial: string): Promise<DeviceInfo | null> {
     return null
   }
   if (!res.ok) {
-    throw new Error('기기 정보를 가져오지 못했습니다.')
+    throw new Error(tr('error.deviceOne'))
   }
   return (await res.json()) as DeviceInfo
 }
@@ -165,7 +167,7 @@ export async function registerDevice(device: DeviceInfo): Promise<RegisterOutcom
   })
   const body = (await res.json().catch(() => null)) as RegisterOutcome | null
   if (!body) {
-    return { ok: false, message: `등록에 실패했습니다 (HTTP ${res.status}).` }
+    return { ok: false, message: tr('error.registerHttp', { status: res.status }) }
   }
   return body
 }

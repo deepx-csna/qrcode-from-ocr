@@ -1,4 +1,5 @@
 import type { SerialCandidate } from '../lib/api'
+import { useI18n } from '../i18n'
 
 interface Props {
   candidates: SerialCandidate[]
@@ -7,11 +8,12 @@ interface Props {
 }
 
 export default function SerialCandidates({ candidates, selected, onSelect }: Props) {
+  const { t } = useI18n()
   if (candidates.length === 0) return null
 
   return (
     <div className="space-y-2">
-      <p className="dx-label">인식된 시리얼 후보</p>
+      <p className="dx-label">{t('candidates.title')}</p>
       {candidates.map((c) => {
         const active = c.text === selected
         return (
@@ -28,7 +30,7 @@ export default function SerialCandidates({ candidates, selected, onSelect }: Pro
           >
             <span className="min-w-0">
               <span className="block font-mono text-base font-semibold">{c.text}</span>
-              <span className="mt-0.5 block text-xs text-dx-muted">
+              <span className="mt-0.5 block truncate text-xs text-dx-muted">
                 {c.prefix} · &ldquo;{c.rawText}&rdquo;
               </span>
             </span>

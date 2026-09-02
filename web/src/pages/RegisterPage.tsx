@@ -5,12 +5,13 @@ import { registerDevice } from '../lib/api'
 import { useDevices } from '../hooks/useDevice'
 import {
   MODEL_OPTIONS,
-  QA_OPTIONS,
+  QA_VALUES,
   SITE_EXAMPLES,
   makeExampleDraft,
   type DeviceInfo,
   type QaStatus,
 } from '../data/devices'
+import { useI18n } from '../i18n'
 
 /**
  * 기기 사전 등록.
@@ -24,20 +25,22 @@ import {
 export default function RegisterPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const { t, lang } = useI18n()
   const scannedSerial = (params.get('serial') ?? '').trim().toUpperCase()
   const fromScan = scannedSerial.length > 0
 
   const { devices, loading: devicesLoading, reload } = useDevices()
-  const [draft, setDraft] = useState<DeviceInfo>(() => makeExampleDraft(scannedSerial))
+  const [draft, setDraft] = useState<DeviceInfo>(() => makeExampleDraft(scannedSerial, lang))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const serialRef = useRef<HTMLInputElement>(null)
 
-  // 스캔에서 넘어온 시리얼이 바뀌면 폼을 다시 만든다.
+  // 스캔에서 넘어온 시리얼이나 화면 언어가 바뀌면 폼을 다시 만든다.
+  // 배치 위치 예시가 언어별로 다르기 때문이다.
   useEffect(() => {
-    setDraft(makeExampleDraft(scannedSerial))
+    setDraft(makeExampleDraft(scannedSerial, lang))
     setError(null)
-  }, [scannedSerial])
+  }, [scannedSerial, lang])
 
   // 사전 등록은 시리얼부터 입력받는다.
   useEffect(() => {
@@ -83,19 +86,15 @@ export default function RegisterPage() {
 
   return (
     <Layout
-      title={fromScan ? '인식된 기기 등록' : '기기 사전 등록'}
-      subtitle={
-        fromScan
-          ? '카메라로 읽은 시리얼입니다. 나머지 항목은 예시로 채워져 있으니 필요한 것만 고치세요.'
-          : '시리얼 번호만 입력하면 됩니다. 나머지 항목은 예시로 채워져 있습니다.'
-      }
+      title={fromScan ? t('register.titleFromScan') : t('register.title')}
+      subtitle={fromScan ? t('register.subtitleFromScan') : t('register.subtitle')}
     >
       <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
           {/* --- 시리얼 --- */}
           <section className="dx-card p-6">
             <label htmlFor="serial" className="dx-label">
-              시리얼 번호 <span className="text-dx-cyan">*</span>
+              {t('register.serialLabel')} <span className="text-dx-cyan">*</span>
             </label>
 
             <input
@@ -117,31 +116,31 @@ export default function RegisterPage() {
 
             {fromScan ? (
               <p className="mt-2 text-xs text-dx-cyan">
-                카메라로 인식된 시리얼입니다.{' '}
+                {t('register.serialFromScan')}{' '}
                 <Link to="/register" className="underline">
-                  직접 입력하려면 여기
+                  {t('register.serialManualLink')}
                 </Link>
               </p>
             ) : (
               <p className="mt-2 text-xs text-dx-muted">
-                영문·숫자·하이픈 4~32자. 예: <code className="font-mono">DX-M1-A7K3P9V2</code>
+                {t('register.serialHelp')}
               </p>
             )}
 
             {serial.length > 0 && !serialValid && (
               <p className="mt-2 text-sm text-dx-red">
-                형식이 올바르지 않습니다. 영문·숫자·하이픈 4~32자여야 합니다.
+                {t('register.serialInvalid')}
               </p>
             )}
 
             {duplicate && (
               <p className="mt-2 text-sm text-dx-red">
-                이미 등록된 시리얼입니다 ({duplicate.deployedSite}).{' '}
+                {t('register.duplicate', { site: duplicate.deployedSite })}{' '}
                 <Link
                   to={`/device/${encodeURIComponent(duplicate.serial)}`}
                   className="underline"
                 >
-                  등록 정보 보기
+                  {t('register.viewExisting')}
                 </Link>
               </p>
             )}
@@ -149,10 +148,10 @@ export default function RegisterPage() {
 
           {/* --- 기기 정보 --- */}
           <section className="dx-card space-y-4 p-6">
-            <h2 className="text-sm font-semibold text-dx-muted">기기 정보</h2>
+            <h2 className="text-sm font-semibold text-dx-muted">{t('register.sectionInfo')}</h2>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="모델">
+              <Field label={t('field.model')}>
                 <select
                   value={draft.model}
                   onChange={(e) => set('model', e.target.value)}
@@ -166,7 +165,7 @@ export default function RegisterPage() {
                 </select>
               </Field>
 
-              <Field label="NPU">
+              <Field label={t('field.npu')}>
                 <input
                   value={draft.npu}
                   onChange={(e) => set('npu', e.target.value)}
@@ -174,7 +173,7 @@ export default function RegisterPage() {
                 />
               </Field>
 
-              <Field label="HW 리비전">
+              <Field label={t('field.hwRevision')}>
                 <input
                   value={draft.hwRevision}
                   onChange={(e) => set('hwRevision', e.target.value)}
@@ -182,7 +181,7 @@ export default function RegisterPage() {
                 />
               </Field>
 
-              <Field label="펌웨어">
+              <Field label={t('field.firmware')}>
                 <input
                   value={draft.firmware}
                   onChange={(e) => set('firmware', e.target.value)}
@@ -190,7 +189,7 @@ export default function RegisterPage() {
                 />
               </Field>
 
-              <Field label="MAC 주소">
+              <Field label={t('field.macAddress')}>
                 <input
                   value={draft.macAddress}
                   onChange={(e) => set('macAddress', e.target.value)}
@@ -198,21 +197,21 @@ export default function RegisterPage() {
                 />
               </Field>
 
-              <Field label="QA 상태">
+              <Field label={t('register.qaStatus')}>
                 <select
                   value={draft.qaStatus}
                   onChange={(e) => set('qaStatus', e.target.value as QaStatus)}
                   className="dx-input"
                 >
-                  {QA_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
+                  {QA_VALUES.map((v) => (
+                    <option key={v} value={v}>
+                      {t(`qa.${v}`)}
                     </option>
                   ))}
                 </select>
               </Field>
 
-              <Field label="제조일">
+              <Field label={t('field.manufacturedAt')}>
                 <input
                   type="date"
                   value={draft.manufacturedAt}
@@ -221,7 +220,7 @@ export default function RegisterPage() {
                 />
               </Field>
 
-              <Field label="보증 만료">
+              <Field label={t('field.warrantyUntil')}>
                 <input
                   type="date"
                   value={draft.warrantyUntil}
@@ -231,7 +230,7 @@ export default function RegisterPage() {
               </Field>
             </div>
 
-            <Field label="배치 위치">
+            <Field label={t('field.deployedSite')}>
               <input
                 value={draft.deployedSite}
                 onChange={(e) => set('deployedSite', e.target.value)}
@@ -239,14 +238,14 @@ export default function RegisterPage() {
                 className="dx-input"
               />
               <datalist id="site-examples">
-                {SITE_EXAMPLES.map((s) => (
-                  <option key={s} value={s} />
+                {SITE_EXAMPLES[lang].map((site) => (
+                  <option key={site} value={site} />
                 ))}
               </datalist>
             </Field>
 
             <div className="grid grid-cols-3 gap-4">
-              <Field label="연산 (TOPS)">
+              <Field label={`${t('spec.tops')} (TOPS)`}>
                 <input
                   type="number"
                   value={draft.specs.tops}
@@ -254,7 +253,7 @@ export default function RegisterPage() {
                   className="dx-input font-mono"
                 />
               </Field>
-              <Field label="메모리 (GB)">
+              <Field label={`${t('spec.memory')} (GB)`}>
                 <input
                   type="number"
                   value={draft.specs.memoryGb}
@@ -262,7 +261,7 @@ export default function RegisterPage() {
                   className="dx-input font-mono"
                 />
               </Field>
-              <Field label="소비전력 (W)">
+              <Field label={`${t('spec.power')} (W)`}>
                 <input
                   type="number"
                   value={draft.specs.powerW}
@@ -277,15 +276,12 @@ export default function RegisterPage() {
         {/* --- 사이드 --- */}
         <aside className="flex flex-col gap-4">
           <div className="dx-card p-5">
-            <p className="dx-label">등록 후</p>
-            <p className="mt-2 text-sm text-dx-muted">
-              등록이 끝나면 바로 QR 발행 화면으로 이동합니다. 그 QR 을 휴대폰으로 찍으면
-              지금 입력한 정보가 그대로 조회됩니다.
-            </p>
+            <p className="dx-label">{t('register.afterTitle')}</p>
+            <p className="mt-2 text-sm text-dx-muted">{t('register.afterBody')}</p>
           </div>
 
           <button type="submit" disabled={!canSubmit} className="dx-btn-primary w-full py-4">
-            {busy ? '등록 중…' : '등록하고 QR 발행 →'}
+            {busy ? t('register.submitting') : t('register.submit')}
           </button>
 
           <button
@@ -293,7 +289,7 @@ export default function RegisterPage() {
             onClick={() => (fromScan ? navigate('/') : navigate(-1))}
             className="dx-btn-ghost w-full"
           >
-            취소
+            {t('common.cancel')}
           </button>
 
           {error && (
@@ -303,10 +299,12 @@ export default function RegisterPage() {
           )}
 
           <div className="dx-card p-5">
-            <p className="dx-label">현재 등록된 기기</p>
+            <p className="dx-label">{t('register.count')}</p>
             <p className="mt-1 font-mono text-2xl font-bold text-dx-cyan">
               {devicesLoading ? '—' : devices.length}
-              <span className="ml-1 text-sm font-normal text-dx-muted">대</span>
+              <span className="ml-1 text-sm font-normal text-dx-muted">
+                {t('register.unit')}
+              </span>
             </p>
           </div>
         </aside>

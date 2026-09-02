@@ -6,6 +6,8 @@
 //
 // 최초 실행 시 서버가 data/seed_devices.json 으로 레지스트리를 초기화한다.
 
+import type { Lang } from '../i18n'
+
 export type QaStatus = 'PASS' | 'FAIL' | 'PENDING'
 
 export interface DeviceSpecs {
@@ -28,11 +30,8 @@ export interface DeviceInfo {
   specs: DeviceSpecs
 }
 
-export const QA_OPTIONS: { value: QaStatus; label: string }[] = [
-  { value: 'PASS', label: 'QA 합격' },
-  { value: 'PENDING', label: 'QA 대기' },
-  { value: 'FAIL', label: 'QA 불합격' },
-]
+/** 등록 폼의 QA 선택지. 표시 문구는 i18n 의 qa.* 키에서 가져온다. */
+export const QA_VALUES: QaStatus[] = ['PASS', 'PENDING', 'FAIL']
 
 export const MODEL_OPTIONS = [
   'DEEPX M1 Module',
@@ -40,13 +39,31 @@ export const MODEL_OPTIONS = [
   'DEEPX M1 Dev Board',
 ]
 
-export const SITE_EXAMPLES = [
-  '수원 스마트팩토리 · 검사라인 #3',
-  '판교 R&D 센터 · 벤치 #7',
-  '평택 물류센터 · 분류기 A',
-  '인천 항만 · CCTV 게이트 #12',
-  '미배치 (창고 재고)',
-]
+// 배치 위치 예시. 등록 폼의 프리필과 자동완성에 쓴다.
+// 등록되면 그대로 데이터가 되므로 화면 언어에 맞춰 채워 준다.
+export const SITE_EXAMPLES: Record<Lang, string[]> = {
+  ko: [
+    '수원 스마트팩토리 · 검사라인 #3',
+    '판교 R&D 센터 · 벤치 #7',
+    '평택 물류센터 · 분류기 A',
+    '인천 항만 · CCTV 게이트 #12',
+    '미배치 (창고 재고)',
+  ],
+  en: [
+    'Suwon Smart Factory · Inspection line #3',
+    'Pangyo R&D Center · Bench #7',
+    'Pyeongtaek Logistics · Sorter A',
+    'Incheon Port · CCTV gate #12',
+    'Unassigned (warehouse stock)',
+  ],
+  zh: [
+    '水原智慧工厂 · 检测线 #3',
+    '板桥研发中心 · 工位 #7',
+    '平泽物流中心 · 分拣机 A',
+    '仁川港 · 监控闸口 #12',
+    '未部署（仓库库存）',
+  ],
+}
 
 function isoDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -71,7 +88,7 @@ function randomMac(): string {
  *
  * 나머지 필드는 모두 그럴듯한 예시로 미리 채워, 데모 중 타이핑할 일이 없게 한다.
  */
-export function makeExampleDraft(serial = ''): DeviceInfo {
+export function makeExampleDraft(serial = '', lang: Lang = 'ko'): DeviceInfo {
   const now = new Date()
   const warranty = new Date(now)
   warranty.setFullYear(warranty.getFullYear() + 3)
@@ -86,7 +103,7 @@ export function makeExampleDraft(serial = ''): DeviceInfo {
     macAddress: randomMac(),
     warrantyUntil: isoDate(warranty),
     qaStatus: 'PASS',
-    deployedSite: SITE_EXAMPLES[0],
+    deployedSite: SITE_EXAMPLES[lang][0],
     specs: { tops: 25, memoryGb: 4, powerW: 5 },
   }
 }

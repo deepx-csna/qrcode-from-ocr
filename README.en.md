@@ -102,6 +102,21 @@ browser. You can also be explicit:
 Without labels, use `라벨 없이 시연하기` at the bottom of the scan screen to pick a
 serial directly and demo steps 3–4 only.
 
+## Interface language
+
+The **`KO` / `EN` / `中`** buttons in the top right switch between Korean, English
+and Chinese. The choice is stored in the browser and survives reloads; on a first
+visit the browser language decides (`zh*` → Chinese, `en*` → English, otherwise
+Korean).
+
+Only **interface text** is translated. Registered device data (deployment site and
+so on) is user-entered and shown as stored. The eight seed devices carry Korean
+site names — edit `data/seed_devices.json` if you demo in another language.
+
+To adjust wording or add a language, `web/src/i18n/index.tsx` is the only file to
+touch. The dictionary is typed against the Korean keys, so a missing key in another
+language fails `npm run build`.
+
 ---
 
 ## Continuous auto-recognition
@@ -294,6 +309,7 @@ qrcode-from-ocr/
 │   ├── ocr_engine.{hpp,cpp}      PP-OCRv6 inference (from DEEPX dx-demos)
 │   └── third_party/              cpp-httplib, nlohmann/json
 ├── web/                          Vite + React + TypeScript + Tailwind
+│   ├── src/i18n/index.tsx        ko/en/zh dictionary (no dependency)
 │   └── dist/                     ★ built bundle is committed — runs without Node
 ├── models/                       8 .dxnn files + dictionary (372 MB)
 ├── data/seed_devices.json        8 seed devices

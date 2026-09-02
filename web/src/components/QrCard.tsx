@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import QRCode from 'qrcode'
+import { useI18n } from '../i18n'
 
 interface Props {
   url: string
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function QrCard({ url, serial, caption }: Props) {
+  const { t } = useI18n()
   const [dataUrl, setDataUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,14 +40,14 @@ export default function QrCard({ url, serial, caption }: Props) {
       <div className="dx-card flex flex-col items-center gap-4 p-6">
         <div className="rounded-xl bg-white p-3">
           {dataUrl ? (
-            <img src={dataUrl} alt={`${serial} QR 코드`} className="block h-80 w-80" />
+            <img src={dataUrl} alt={`${serial} QR`} className="block h-80 w-80" />
           ) : (
             <div className="h-80 w-80 animate-pulse bg-dx-border/40" />
           )}
         </div>
 
         <div className="w-full text-center">
-          <p className="dx-label mb-1">QR 인코딩 주소</p>
+          <p className="dx-label mb-1">{t('result.qrUrl')}</p>
           {/* 휴대폰이 없거나 QR 인식이 안 될 때를 위해 URL 을 그대로 노출한다 */}
           <p className="break-all font-mono text-sm text-dx-text">{url}</p>
         </div>
@@ -56,14 +58,10 @@ export default function QrCard({ url, serial, caption }: Props) {
           disabled={!dataUrl}
           className="dx-btn-ghost w-full py-2 text-sm"
         >
-          QR 프린트
+          {t('result.print')}
         </button>
 
-        <p className="text-center text-xs text-dx-muted">
-          휴대폰 기본 카메라로 QR 을 비추면 기기 정보 페이지가 열립니다.
-          <br />
-          휴대폰이 같은 네트워크에 있어야 합니다.
-        </p>
+        <p className="text-center text-xs text-dx-muted">{t('result.hint')}</p>
 
         {error && <p className="text-sm text-dx-red">{error}</p>}
       </div>

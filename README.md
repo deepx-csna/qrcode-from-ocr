@@ -100,6 +100,20 @@ cd qrcode-from-ocr
 
 라벨이 없으면 화면 하단 `라벨 없이 시연하기` 에서 시리얼을 직접 골라 3~4 단계만 시연할 수 있습니다.
 
+## 화면 언어
+
+우측 상단의 **`KO` / `EN` / `中`** 버튼으로 한국어·영어·중국어를 전환합니다.
+선택은 브라우저에 저장되어 다음 접속에도 유지되고, 처음 열 때는 브라우저 언어를
+따릅니다 (`zh*` → 중국어, `en*` → 영어, 그 외 한국어).
+
+번역 대상은 **화면 문구**입니다. 등록된 기기 데이터(배치 위치 등)는 사용자가 입력한
+값이므로 그대로 표시됩니다. 기본 8대의 배치 위치는 한국어로 들어 있으니,
+다른 언어권 시연에 쓰시려면 `data/seed_devices.json` 을 고치세요.
+
+문구를 손보거나 언어를 추가하려면 `web/src/i18n/index.tsx` 한 파일만 보면 됩니다.
+사전이 한국어 키를 기준으로 타입이 잡혀 있어, 다른 언어에서 키를 빠뜨리면
+`npm run build` 가 타입 오류로 잡아냅니다.
+
 ---
 
 ## 실시간 자동 인식
@@ -307,6 +321,7 @@ qrcode-from-ocr/
 │   ├── ocr_engine.{hpp,cpp}      PP-OCRv6 추론 (DEEPX dx-demos 에서 가져옴)
 │   └── third_party/              cpp-httplib, nlohmann/json
 ├── web/                          Vite + React + TypeScript + Tailwind
+│   ├── src/i18n/index.tsx        한/영/중 사전 (의존성 없음)
 │   └── dist/                     ★ 빌드 산출물도 커밋 — Node 없이 실행 가능
 ├── models/                       .dxnn 8개 + 사전 (372MB)
 ├── data/seed_devices.json        기본 기기 8대
