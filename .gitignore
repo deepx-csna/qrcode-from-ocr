@@ -1,0 +1,12 @@
+# C++ 빌드 산출물
+cpp/build/
+
+# 런타임 상태
+.server.pid
+data/registry.json
+data/registry.json.tmp
+
+# 에디터
+.vscode/
+.idea/
+*.swp

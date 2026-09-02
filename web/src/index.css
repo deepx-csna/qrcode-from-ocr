@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-dx-bg text-dx-text antialiased;
+    font-family: 'Pretendard', 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer components {
+  .dx-card {
+    @apply rounded-2xl border border-dx-border bg-dx-card;
+  }
+
+  .dx-label {
+    @apply text-xs font-medium uppercase tracking-wider text-dx-muted;
+  }
+
+  .dx-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-base
+           font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .dx-btn-primary {
+    @apply dx-btn bg-dx-cyan text-dx-bg hover:bg-dx-cyanDim hover:text-dx-text;
+  }
+
+  .dx-input {
+    @apply w-full rounded-xl border border-dx-border bg-dx-surface px-3 py-2.5 text-sm
+           text-dx-text outline-none transition-colors
+           focus:border-dx-cyan placeholder:text-dx-muted/50;
+  }
+
+  .dx-btn-ghost {
+    @apply dx-btn border border-dx-border bg-transparent text-dx-text hover:bg-dx-surface;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   인쇄용 라벨
+
+   .print-area 는 #root 밖(document.body 직속)에 포털로 붙는다.
+   인쇄할 때 #root 를 통째로 감추면 앱 콘텐츠가 지면을 차지하지 않으므로
+   빈 페이지가 따라 나오지 않는다.
+   --------------------------------------------------------------------------- */
+
+.print-area {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  /* 앱의 다크 배경이 그대로 인쇄되면 페이지가 새까맣게 나온다
+     ("배경 그래픽" 옵션을 켠 경우). 흰 바탕으로 되돌린다. */
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  .print-area {
+    display: block;
+    color: #000;
+  }
+
+  .print-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4mm;
+    padding: 8mm;
+    border: 1.5pt solid #999;
+    border-radius: 4mm;
+    width: 88mm;
+    margin: 0 auto;
+    font-family: system-ui, sans-serif;
+  }
+
+  .print-brand {
+    align-self: flex-start;
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .print-qr {
+    width: 55mm;
+    height: 55mm;
+  }
+
+  .print-serial {
+    font-family: ui-monospace, monospace;
+    font-size: 16pt;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-align: center;
+    word-break: break-all;
+  }
+
+  .print-caption {
+    font-size: 9pt;
+    color: #444;
+    text-align: center;
+  }
+
+  .print-url {
+    font-family: ui-monospace, monospace;
+    font-size: 7pt;
+    color: #666;
+    text-align: center;
+    word-break: break-all;
+  }
+}
