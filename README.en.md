@@ -78,14 +78,25 @@ cd qrcode-from-ocr
 `build.sh` checks cmake, OpenCV, DX-RT, the models and the camera up front, and
 stops with the exact install command if something is missing.
 
-`run.sh` **auto-selects the `/dev/video*` node that actually captures** and opens a
-browser. You can also be explicit:
+**The server finds the camera itself.** It opens each `/dev/video*` in order and
+keeps the first one that actually delivers a frame, so machines without a `video0`
+— or where `video0` is not a capture node — work unchanged.
 
 ```bash
-./run.sh --camera 2            # by index
-./run.sh --device /dev/video2  # by path
+./run.sh                       # auto-detect
+./run.sh --list-cameras        # see which devices work (returns immediately)
+./run.sh --camera 2            # pin by index
+./run.sh --device /dev/video2  # pin by path
 ./run.sh --port 9000 --no-browser
 ./stop.sh                      # stop
+```
+
+`--list-cameras` skips the NPU model load, so it finishes in under a second:
+
+```
+Probing 2 camera candidate(s) by actually grabbing a frame:
+  OK   /dev/video2  1280x720
+       /dev/video3  opens but delivers no frames (likely a metadata node)
 ```
 
 ---
@@ -347,7 +358,7 @@ tuning marker detection or the cut rule. See `--help` for all flags.
 | Symptom | Check |
 |---|---|
 | Broken layout or no camera | The browser was holding a cached bundle after a rebuild. The server now sends `no-store` for `index.html`. If it still looks wrong, `Ctrl+Shift+R` |
-| No camera image | `v4l2-ctl --list-devices`. The node that lists formats is the capture node. Then `./run.sh --device /dev/videoN` |
+| No camera image | `./run.sh --list-cameras` to see which device works, then `./run.sh --device /dev/videoN`. If none work, check the connection and permissions (`id -nG \| grep video`) |
 | Phone won't open the QR | ① same network? ② is `LAN base URL` in the log not `localhost`? ③ firewall on the port. The URL under the QR can be typed manually |
 | Never auto-freezes | Read the on-screen hint. `신뢰도 87% — 임계값 90% 미만` means move the label closer. Otherwise use `지금 바로 인식` |
 | Same number keeps appearing | Press `아니요` to skip it, then move the label away |

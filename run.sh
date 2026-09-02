@@ -2,9 +2,10 @@
 #
 # qrcode-from-ocr launcher
 #
-#   ./run.sh                      run with defaults and open a browser
+#   ./run.sh                      auto-detect the camera and open a browser
 #   ./run.sh --camera 2           select the camera by index
 #   ./run.sh --device /dev/video2 select the camera by path
+#   ./run.sh --list-cameras       show which cameras work, then exit
 #   ./run.sh --port 8090          listen on a different port
 #   ./run.sh --no-browser         do not open a browser
 #
@@ -26,6 +27,7 @@ PORT="${DX_PORT:-8090}"
 CAMERA_IDX="${DX_CAMERA_IDX:-}"
 CAMERA_DEV="${DX_CAMERA_DEV:-}"
 OPEN_BROWSER=true
+LIST_CAMERAS=false
 EXTRA=()
 
 while (( $# )); do
@@ -33,11 +35,18 @@ while (( $# )); do
         --port)       PORT="$2"; shift 2;;
         --camera)     CAMERA_IDX="$2"; CAMERA_DEV=""; shift 2;;
         --device)     CAMERA_DEV="$2"; shift 2;;
-        --no-browser) OPEN_BROWSER=false; shift;;
+        --no-browser)   OPEN_BROWSER=false; shift;;
+        --list-cameras) LIST_CAMERAS=true; shift;;
         -h|--help)    usage;;
         *)            EXTRA+=("$1"); shift;;
     esac
 done
+
+# Camera diagnostics: hand straight to the server and exit. It skips the NPU
+# model load, so this returns immediately.
+if [ "${LIST_CAMERAS}" = true ]; then
+    exec "${BIN}" --list-cameras
+fi
 
 if [ ! -x "${BIN}" ]; then
     echo "Server binary not found: ${BIN}" >&2
@@ -52,33 +61,15 @@ fi
 
 "${ROOT}/stop.sh" >/dev/null 2>&1 || true
 
-# Camera selection: --device > --camera > auto-detect
+# Camera selection. Auto-detection lives in the server, which opens each
+# /dev/video* candidate and keeps the first one that actually delivers a frame.
+# Probing here with v4l2-ctl was unreliable: the tool is not always installed,
+# and a node that lists formats does not necessarily produce frames.
 CAM_ARGS=()
 if [ -n "${CAMERA_DEV}" ]; then
     CAM_ARGS=(--device "${CAMERA_DEV}")
 elif [ -n "${CAMERA_IDX}" ]; then
     CAM_ARGS=(--camera "${CAMERA_IDX}")
-else
-    # Pick the first /dev/video* node that actually captures. USB webcams
-    # usually expose a capture node and a metadata node, so the lowest number
-    # is not necessarily the right one.
-    picked=""
-    for dev in /dev/video*; do
-        [ -e "${dev}" ] || continue
-        if command -v v4l2-ctl >/dev/null 2>&1; then
-            if v4l2-ctl --device="${dev}" --list-formats 2>/dev/null | grep -q "\["; then
-                picked="${dev}"; break
-            fi
-        else
-            picked="${dev}"; break
-        fi
-    done
-    if [ -z "${picked}" ]; then
-        echo "No camera found. Check 'ls /dev/video*' and pass --device explicitly." >&2
-        exit 1
-    fi
-    echo "Auto-selected camera: ${picked}"
-    CAM_ARGS=(--device "${picked}")
 fi
 
 echo "Starting the server on port ${PORT}..."

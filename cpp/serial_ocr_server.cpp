@@ -431,13 +431,72 @@ std::string buildScanJson(const camocr::OcrResult& result,
 // ---------------------------------------------------------------------------
 
 struct CameraConfig {
-    int deviceIndex = 0;
-    std::string devicePath;  // 비어 있지 않으면 인덱스 대신 경로로 연다
+    int deviceIndex = -1;    ///< -1 이면 자동 탐색
+    std::string devicePath;  ///< 비어 있지 않으면 인덱스 대신 경로로 연다
     int width = 1280;
     int height = 720;
     int cropSize = 960;
     double fps = 15.0;
 };
+
+// /dev/video* 를 번호 순으로 열거한다.
+std::vector<std::string> enumerateVideoDevices()
+{
+    std::vector<std::pair<int, std::string>> found;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator("/dev", ec)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("video", 0) != 0) {
+            continue;
+        }
+        try {
+            found.emplace_back(std::stoi(name.substr(5)), entry.path().string());
+        } catch (const std::exception&) {
+            // video 뒤가 숫자가 아니면 건너뛴다
+        }
+    }
+    std::sort(found.begin(), found.end());
+
+    std::vector<std::string> paths;
+    paths.reserve(found.size());
+    for (auto& [_, path] : found) {
+        paths.push_back(std::move(path));
+    }
+    return paths;
+}
+
+// 카메라 후보 하나를 실제로 열어 프레임이 나오는지 확인한다.
+//
+// v4l2-ctl 로 포맷 목록만 보고 고르면 다른 환경에서 틀린다. UVC 웹캠은
+// 캡처 노드와 메타데이터 노드를 함께 만들고, 열리기만 하고 프레임은
+// 주지 않는 장치도 있다. 실제로 한 장 받아 보는 것이 유일하게 확실하다.
+bool probeCamera(const std::string& path, const CameraConfig& config, std::string* why)
+{
+    cv::VideoCapture cap;
+    if (!cap.open(path, cv::CAP_V4L2)) {
+        *why = "cannot open (permission, or in use by another process)";
+        return false;
+    }
+
+    cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, config.width);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, config.height);
+
+    // 첫 프레임은 늦게 오는 장치가 있다. 잠깐 기다려 준다.
+    cv::Mat frame;
+    for (int attempt = 0; attempt < 15; ++attempt) {
+        if (cap.read(frame) && !frame.empty()) {
+            std::ostringstream oss;
+            oss << frame.cols << "x" << frame.rows;
+            *why = oss.str();
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    }
+    *why = "opens but delivers no frames (likely a metadata node)";
+    return false;
+}
 
 cv::Mat centerCropToSize(const cv::Mat& frame, int cropSize)
 {
@@ -498,16 +557,55 @@ public:
 private:
     bool open()
     {
+        // 후보 결정: --device > --camera N > 자동 탐색
+        std::vector<std::string> candidates;
+        bool explicitChoice = false;
         if (!config_.devicePath.empty()) {
-            cap_.open(config_.devicePath, cv::CAP_V4L2);
+            candidates.push_back(config_.devicePath);
+            explicitChoice = true;
+        } else if (config_.deviceIndex >= 0) {
+            candidates.push_back("/dev/video" + std::to_string(config_.deviceIndex));
+            explicitChoice = true;
         } else {
-            cap_.open(config_.deviceIndex, cv::CAP_V4L2);
-        }
-        if (!cap_.isOpened()) {
-            std::cerr << "[camera] Failed to open camera "
-                      << (config_.devicePath.empty() ? std::to_string(config_.deviceIndex)
-                                                     : config_.devicePath)
+            candidates = enumerateVideoDevices();
+            if (candidates.empty()) {
+                std::cerr << "[camera] no /dev/video* devices found." << std::endl;
+                return false;
+            }
+            std::cout << "[camera] auto-detecting from " << candidates.size() << " candidate(s)"
                       << std::endl;
+        }
+
+        // 실제로 프레임이 나오는 첫 장치를 쓴다. 시도 결과를 모두 찍어
+        // 다른 환경에서도 원인을 바로 알 수 있게 한다.
+        std::string chosen;
+        for (const auto& dev : candidates) {
+            std::string detail;
+            if (probeCamera(dev, config_, &detail)) {
+                std::cout << "[camera]   " << dev << " : OK (" << detail << ")" << std::endl;
+                chosen = dev;
+                break;
+            }
+            std::cout << "[camera]   " << dev << " : " << detail << std::endl;
+        }
+
+        if (chosen.empty()) {
+            std::cerr << "[camera] no usable camera found." << std::endl;
+            if (explicitChoice) {
+                std::cerr << "[camera] the device you specified does not work. "
+                             "Run --list-cameras to see what does."
+                          << std::endl;
+            } else {
+                std::cerr << "[camera] check that a camera is connected, no other "
+                             "program is using it, and your user is in the video "
+                             "group (id -nG | grep video)."
+                          << std::endl;
+            }
+            return false;
+        }
+
+        if (!cap_.open(chosen, cv::CAP_V4L2)) {
+            std::cerr << "[camera] failed to reopen " << chosen << std::endl;
             return false;
         }
 
@@ -518,10 +616,9 @@ private:
         cap_.set(cv::CAP_PROP_FPS, config_.fps);
         cap_.set(cv::CAP_PROP_AUTOFOCUS, 1.0);
 
-        std::cout << "[camera] opened "
-                  << (config_.devicePath.empty() ? "/dev/video" + std::to_string(config_.deviceIndex)
-                                                 : config_.devicePath)
-                  << " -> " << cap_.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
+        openedPath_ = chosen;
+        std::cout << "[camera] using " << chosen << " -> "
+                  << cap_.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
                   << cap_.get(cv::CAP_PROP_FRAME_HEIGHT) << " @ " << cap_.get(cv::CAP_PROP_FPS)
                   << " FPS, crop " << config_.cropSize << "x" << config_.cropSize << std::endl;
         return true;
@@ -545,6 +642,7 @@ private:
     }
 
     CameraConfig config_;
+    std::string openedPath_;
     cv::VideoCapture cap_;
     std::thread thread_;
     std::atomic_bool running_{false};
@@ -572,6 +670,8 @@ struct Args {
     fs::path seedPath;
     /** 실시간 모드에서 화면을 멈출 최소 신뢰도. */
     double autoConfidence = 0.90;
+    /** 카메라 후보를 진단 출력하고 종료한다. */
+    bool listCameras = false;
 };
 
 // 저장소 루트. 빌드 시점에 박히므로 실행 위치와 무관하게 자산을 찾는다.
@@ -589,7 +689,7 @@ void printUsage(const char* argv0)
 {
     std::cout
         << "Usage: " << argv0 << " [options]\n"
-        << "  --camera <idx>       카메라 인덱스 (기본 0)\n"
+        << "  --camera <idx>       camera index (auto-detected when omitted)\n"
         << "  --device <path>      카메라 디바이스 경로 (예: /dev/video2, --camera 보다 우선)\n"
         << "  --port <n>           HTTP 포트 (기본 8090)\n"
         << "  --host <addr>        바인딩 주소 (기본 0.0.0.0)\n"
@@ -606,6 +706,7 @@ void printUsage(const char* argv0)
         << "  --registry <path>    기기 레지스트리 JSON (기본 data/registry.json)\n"
         << "  --seed <path>        레지스트리 최초 생성 시 쓸 시드 JSON\n"
         << "  --auto-confidence <f> 실시간 자동 캡처 최소 신뢰도 0~1 (기본 0.90)\n"
+        << "  --list-cameras       probe cameras, print the result and exit\n"
         << "  -h, --help           도움말\n";
 }
 
@@ -661,6 +762,8 @@ bool parseArgs(int argc, char** argv, Args* args)
             args->registryPath = next("--registry");
         } else if (a == "--seed") {
             args->seedPath = next("--seed");
+        } else if (a == "--list-cameras") {
+            args->listCameras = true;
         } else if (a == "--auto-confidence") {
             args->autoConfidence = std::clamp(std::stod(next("--auto-confidence")), 0.0, 1.0);
         } else {
@@ -684,6 +787,33 @@ int main(int argc, char** argv)
     } catch (const std::exception& e) {
         std::cerr << "[args] " << e.what() << std::endl;
         return 1;
+    }
+
+    // 카메라 진단은 NPU 모델을 올리기 전에 끝낸다. 로딩에 수십 초가 걸린다.
+    if (args.listCameras) {
+        const std::vector<std::string> devices = enumerateVideoDevices();
+        if (devices.empty()) {
+            std::cout << "No /dev/video* devices found." << std::endl;
+            return 1;
+        }
+        std::cout << "Probing " << devices.size()
+                  << " camera candidate(s) by actually grabbing a frame:" << std::endl;
+        int usable = 0;
+        for (const auto& dev : devices) {
+            std::string detail;
+            const bool ok = probeCamera(dev, args.camera, &detail);
+            usable += ok ? 1 : 0;
+            std::cout << "  " << (ok ? "OK   " : "     ") << dev << "  " << detail << std::endl;
+        }
+        std::cout << std::endl;
+        if (usable == 0) {
+            std::cout << "None are usable. Check the camera connection and "
+                         "permissions (id -nG | grep video)."
+                      << std::endl;
+            return 1;
+        }
+        std::cout << "To pin one explicitly: --device <path>" << std::endl;
+        return 0;
     }
 
     args.webRoot = fs::weakly_canonical(args.webRoot);

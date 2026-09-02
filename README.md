@@ -77,14 +77,25 @@ cd qrcode-from-ocr
 `build.sh` 는 시작할 때 cmake · OpenCV · DX-RT · 모델 · 카메라를 검사하고,
 빠진 것이 있으면 설치 명령과 함께 멈춥니다.
 
-`run.sh` 는 `/dev/video*` 중 **실제로 캡처되는 장치를 자동으로 골라** 실행하고
-브라우저를 엽니다. 원하면 직접 지정할 수도 있습니다:
+카메라는 **서버가 자동으로 찾습니다.** `/dev/video*` 를 번호 순으로 열어 보고
+**실제로 프레임이 오는 첫 장치**를 씁니다. `video0` 이 없거나 캡처 노드가 아닌
+환경에서도 그대로 동작합니다.
 
 ```bash
-./run.sh --camera 2            # 인덱스로
-./run.sh --device /dev/video2  # 경로로
+./run.sh                       # 자동 탐색
+./run.sh --list-cameras        # 어느 장치가 되는지 확인 (즉시 끝남)
+./run.sh --camera 2            # 인덱스로 지정
+./run.sh --device /dev/video2  # 경로로 지정
 ./run.sh --port 9000 --no-browser
 ./stop.sh                      # 종료
+```
+
+`--list-cameras` 는 NPU 모델을 올리지 않으므로 1초 안에 끝납니다:
+
+```
+Probing 2 camera candidate(s) by actually grabbing a frame:
+  OK   /dev/video2  1280x720
+       /dev/video3  opens but delivers no frames (likely a metadata node)
 ```
 
 ---
@@ -359,7 +370,7 @@ cd web && npm run dev
 | 증상 | 확인할 것 |
 |---|---|
 | 화면이 깨지거나 카메라가 안 나옴 | 재빌드 후 브라우저 캐시가 옛 번들을 물고 있던 문제입니다. 서버가 `index.html` 에 `no-store` 를 보내 막았습니다. 그래도 이상하면 `Ctrl+Shift+R` |
-| 카메라 화면이 안 나옴 | `v4l2-ctl --list-devices` 로 장치 확인. 포맷 목록이 나오는 노드가 캡처 노드입니다. `./run.sh --device /dev/videoN` |
+| 카메라 화면이 안 나옴 | `./run.sh --list-cameras` 로 어느 장치가 되는지 확인 후 `./run.sh --device /dev/videoN`. 전부 실패하면 연결과 권한 확인 (`id -nG \| grep video`) |
 | 휴대폰에서 QR 이 안 열림 | ① 같은 네트워크인지 ② 로그의 `LAN base URL` 이 `localhost` 가 아닌지 ③ 방화벽이 포트를 막는지. QR 아래 URL 을 직접 입력해도 됩니다 |
 | 자동으로 안 멈춤 | 화면 안내를 보세요. `신뢰도 87% — 임계값 90% 미만` 이면 라벨을 더 가까이. 안 되면 `지금 바로 인식` |
 | 같은 번호가 계속 뜸 | `아니요` 를 누르면 건너뜁니다. 라벨을 치우거나 다른 라벨을 비추세요 |

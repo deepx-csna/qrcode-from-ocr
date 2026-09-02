@@ -74,13 +74,24 @@ cd qrcode-from-ocr
 `build.sh` 会先检查 cmake、OpenCV、DX-RT、模型和摄像头，缺少任何一项都会给出
 具体的安装命令并停止。
 
-`run.sh` 会**自动挑选真正能采集画面的 `/dev/video*` 节点**并打开浏览器。也可手动指定：
+**摄像头由服务端自动查找。** 它按编号依次打开 `/dev/video*`，采用第一个**真正能
+取到画面**的设备，因此没有 `video0`、或 `video0` 并非采集节点的机器同样可用。
 
 ```bash
-./run.sh --camera 2            # 按索引
-./run.sh --device /dev/video2  # 按路径
+./run.sh                       # 自动探测
+./run.sh --list-cameras        # 查看哪些设备可用（立即返回）
+./run.sh --camera 2            # 按索引指定
+./run.sh --device /dev/video2  # 按路径指定
 ./run.sh --port 9000 --no-browser
 ./stop.sh                      # 停止
+```
+
+`--list-cameras` 不加载 NPU 模型，1 秒内完成：
+
+```
+Probing 2 camera candidate(s) by actually grabbing a frame:
+  OK   /dev/video2  1280x720
+       /dev/video3  opens but delivers no frames (likely a metadata node)
 ```
 
 ---
@@ -326,7 +337,7 @@ cd web && npm run dev
 | 现象 | 检查项 |
 |---|---|
 | 页面错乱或没有摄像头画面 | 重新构建后浏览器仍缓存旧包所致。服务端现已对 `index.html` 返回 `no-store`。若仍异常，请 `Ctrl+Shift+R` |
-| 没有摄像头画面 | `v4l2-ctl --list-devices`。能列出格式的节点才是采集节点，然后 `./run.sh --device /dev/videoN` |
+| 没有摄像头画面 | 先用 `./run.sh --list-cameras` 查看可用设备，再 `./run.sh --device /dev/videoN`。若全部失败，请检查连接与权限（`id -nG \| grep video`） |
 | 手机打不开二维码 | ① 是否同一网络 ② 日志中 `LAN base URL` 是否为 `localhost` ③ 防火墙是否拦截端口。也可手动输入二维码下方的 URL |
 | 始终不自动冻结 | 查看页面提示。显示 `신뢰도 87% — 임계값 90% 미만` 说明需把标签靠近；仍不行就用 `지금 바로 인식` |
 | 反复出现同一号码 | 点 `아니요` 即会跳过，然后移开标签 |
