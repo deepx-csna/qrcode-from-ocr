@@ -3,7 +3,7 @@
 A web demo that **reads a serial number with a camera → issues a QR code → looks up
 the device from that QR**.
 
-OCR runs PP-OCRv6 on a **DEEPX DX-M1 NPU**: ~150 ms detection, ~13 ms recognition.
+OCR runs PP-OCRv6 on a **DEEPX DX-M1 NPU**.
 
 [🇰🇷 한국어](README.md) · 🇺🇸 English · [🇨🇳 中文](README.zh.md)
 
@@ -43,13 +43,7 @@ The `.dxnn` models (372 MB) are **included in this repository** — nothing to d
 
 ### About architectures
 
-Both x86_64 and aarch64 (ARM64) are supported. There is no architecture-specific
-code — no SIMD intrinsics, no inline assembly, no `-march` flags, and the only
-binaries committed are the models themselves.
-
-The `.dxnn` models are compiled for the **DX-M1 NPU, not the host CPU**, so they
-are architecture-independent (header says `"chip_version": "M1A"`,
-`"bytes_order": "little"` — both x86_64 and aarch64 are little-endian).
+Both x86_64 and aarch64 (ARM64) are supported.
 
 The one thing that must match your architecture is the **DX-RT installation**.
 If it is not on a standard path:
@@ -106,11 +100,11 @@ Probing 2 camera candidate(s) by actually grabbing a frame:
 1. **Prepare labels** — print `assets/serial_labels.png`, or show it on a phone screen.
 2. **Point the camera** — just hold the label inside the guide. **No button press.**
    When it locks on, the view freezes and shows the number.
-3. **Confirm** — `맞습니다 · QR 생성 →` (or Space). If wrong, `아니요 · 다시 스캔`.
+3. **Confirm** — `Correct · Issue QR →` (or Space). If wrong, `No · Scan again`.
 4. **Look up** — scan the QR with a phone's default camera to open the device page.
    **The phone must be on the same network.**
 
-Without labels, use `라벨 없이 시연하기` at the bottom of the scan screen to pick a
+Without labels, use `Demo without a label` at the bottom of the scan screen to pick a
 serial directly and demo steps 3–4 only.
 
 ## Interface language
@@ -119,14 +113,6 @@ The **`KO` / `EN` / `中`** buttons in the top right switch between Korean, Engl
 and Chinese. The choice is stored in the browser and survives reloads; on a first
 visit the browser language decides (`zh*` → Chinese, `en*` → English, otherwise
 Korean).
-
-Only **interface text** is translated. Registered device data (deployment site and
-so on) is user-entered and shown as stored. The eight seed devices carry Korean
-site names — edit `data/seed_devices.json` if you demo in another language.
-
-To adjust wording or add a language, `web/src/i18n/index.tsx` is the only file to
-touch. The dictionary is typed against the Korean keys, so a missing key in another
-language fails `npm run build`.
 
 ---
 
@@ -148,16 +134,6 @@ The `autoReason` field reports:
 | `low_confidence` | Extracted, but below the confidence threshold |
 | `no_serial` | No marker found |
 
-**Details**
-
-- **Polling** — the frontend calls `/api/scan` sequentially (not `setInterval`).
-  OCR is serialized server-side, so overlapping requests would only queue up.
-- **Bandwidth** — live polling uses `?frame=0` to skip the ~80 KB base64 JPEG.
-  The server attaches the image **only for the frame that triggered auto-capture**.
-- **Rejected serials are skipped** — pressing `아니요` remembers that serial, so the
-  confirm screen doesn't loop while the same label is still in view. `지금 바로 인식`
-  clears the memory.
-
 ---
 
 ## How a serial is identified
@@ -178,19 +154,7 @@ allowed:
 | Language | Markers |
 |---|---|
 | English | `SN:` `S/N:` `S.N:` `SERIAL:` `SERIAL NO:` |
-| Korean | `시리얼:` `일련번호:` `제품번호:` |
-| Chinese | `序列号:` `序列號:` `序號:` `編號:` |
-| Japanese | `シリアル:` `製造番号:` |
-
-- Short markers like `SN` are checked for **word boundaries** so they don't match
-  inside another word.
-- If OCR splits `S/N:` and the serial into separate boxes, the first token of the
-  next box is used.
-- Trailing `.` `,` `;` `:` are stripped.
-
-> ⚠️ **A label without a marker is not recognized.** Nothing is guessed from shape
-> alone, so always print `S/N:` before the serial. In exchange there are no format
-> constraints at all — **any serial format** is read exactly as printed.
+| Chinese | simplified `序列号:` `序号:` · traditional `序列號:` `序號:` |
 
 ### Verified behaviour
 
@@ -204,6 +168,7 @@ Measured on an actual **DX-M1 NPU**. To reproduce, run
 | `SN: DX-M1-A7K3P9V2` | `DX-M1-A7K3P9V2` | 0.9913 | `SN` |
 | `S/N: ABC-9981-XYZ` | `ABC-9981-XYZ` | 0.9762 | `S/N` |
 | `序列号：NPU-15674X` | `NPU-15674X` | 0.9921 | `序列号` |
+| `编号：NPU-15674X` | `NPU-15674X` | 0.9999 | `编号(X)` |
 | `Serial: SO-BIG-2024` | `SO-BIG-2024` | 0.9775 | `SERIAL` |
 | `S/N: DX-M1-16716Y  REV.C1` | `DX-M1-16716Y` | 0.9856 | `S/N` |
 | `s/n: dx-m1-c4m8t6hd` | `DX-M1-C4M8T6HD` | 0.9776 | `S/N` |
@@ -250,15 +215,15 @@ surrounding whitespace are normalized, so `dx-m1-a7k3p9v2` is the same device.
 
 | Path | Entry | Serial field | Other fields |
 |---|---|---|---|
-| **Pre-register** | `+ 기기 사전 등록` → `/register` | **empty**, auto-focused | example values |
-| **After a scan** | unregistered serial → `이 기기 등록하기` → `/register?serial=…` | **pre-filled** from OCR | example values |
+| **Pre-register** | `+ Pre-register a device` → `/register` | **empty**, auto-focused | example values |
+| **After a scan** | unregistered serial → `Register this device` → `/register?serial=…` | **pre-filled** from OCR | example values |
 
 Both prefill model, firmware, MAC, dates, QA status and site, so during a demo you
 only type the serial. Registration goes straight to the QR screen.
 
 ### Deleting
 
-Header link **`기기 관리`** (`/devices`) lists devices with a delete action. Deletion is
+Header link **`Devices`** (`/devices`) lists devices with a delete action. Deletion is
 irreversible, so it asks again inline. The lookup page (`/device/…`) has no delete
 button — that page is what a phone opens, and a viewer shouldn't be able to erase data.
 
@@ -278,7 +243,7 @@ If the registry file is absent the server seeds it from `data/seed_devices.json`
 
 ## Printing a QR label
 
-`QR 프린트` on the QR screen prints a **black-and-white label to stick on the device**
+`Print QR` on the QR screen prints a **black-and-white label to stick on the device**
 (88 mm wide: 55 mm QR, serial, model, URL) — not a screenshot of the page.
 
 The label is mounted through a React portal **outside `#root`**, and printing hides
@@ -360,10 +325,10 @@ tuning marker detection or the cut rule. See `--help` for all flags.
 | Broken layout or no camera | The browser was holding a cached bundle after a rebuild. The server now sends `no-store` for `index.html`. If it still looks wrong, `Ctrl+Shift+R` |
 | No camera image | `./run.sh --list-cameras` to see which device works, then `./run.sh --device /dev/videoN`. If none work, check the connection and permissions (`id -nG \| grep video`) |
 | Phone won't open the QR | ① same network? ② is `LAN base URL` in the log not `localhost`? ③ firewall on the port. The URL under the QR can be typed manually |
-| Never auto-freezes | Read the on-screen hint. `신뢰도 87% — 임계값 90% 미만` means move the label closer. Otherwise use `지금 바로 인식` |
-| Same number keeps appearing | Press `아니요` to skip it, then move the label away |
+| Never auto-freezes | Read the on-screen hint. `Confidence 87% — below the 90% threshold` means move the label closer. Otherwise use `Scan now (Space)` |
+| Same number keeps appearing | Press `No · Scan again` to skip it, then move the label away |
 | Nothing recognized | Check that the label carries an `S/N:` marker; without one nothing is recognized |
-| `DX-RT 없음` | Install DX-RT, then `DXRT_INSTALLED_DIR=/path ./build.sh` |
+| `DX-RT not found` | Install DX-RT, then `DXRT_INSTALLED_DIR=/path ./build.sh` |
 | Model load fails | `ls models/*.dxnn` should list 8 files; re-clone if fewer |
 
 ---
