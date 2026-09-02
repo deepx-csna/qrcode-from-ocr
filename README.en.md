@@ -111,26 +111,16 @@ and asks for confirmation when **both** hold:
 
 **① Confidence** at or above the threshold (default **90%**, `--auto-confidence`)
 
-**② Evidence**, one of:
+**② A serial was extracted** — a value was cut from after an `S/N:`-style marker
+(see [How a serial is identified](#how-a-serial-is-identified))
 
-| `autoReason` | Meaning |
+The `autoReason` field reports:
+
+| Value | Meaning |
 |---|---|
-| `keyword_same_box` | A serial marker on the **same line** as the serial — strongest |
-| `keyword` | A serial marker somewhere in the frame |
-| `strict_format` | No marker, but the canonical `DX-M1-XXXXXXXX` format |
-
-Markers recognized:
-
-| Language | Markers |
-|---|---|
-| English | `S/N` `S.N` `SN` `SERIAL` `SERIAL NO` |
-| Korean | `시리얼` `일련번호` `제품번호` |
-| Chinese | `序列号` `序列號` `序號` `編號` |
-| Japanese | `シリアル` `製造番号` |
-
-Short markers like `SN` are checked for **word boundaries** so they don't match inside
-another word. Marker detection runs on the **raw OCR text**, because normalization
-turns `S/N` into `S-N`.
+| `ok` | Extracted and confident enough — freeze the view |
+| `low_confidence` | Extracted, but below the confidence threshold |
+| `no_serial` | No marker found |
 
 **Details**
 
@@ -146,27 +136,45 @@ turns `S/N` into `S-N`.
 
 ## How a serial is identified
 
-**Normalization** — alphanumerics are uppercased; everything else (spaces, `:` `/` `.`
-`_`) collapses to a single `-`. Collapsing instead of deleting preserves token
-boundaries (`S/N: DX-M1-A7K3P9V2` → `SN-DX-M1-A7K3P9V2`), and as a bonus recovers
-`DX M1 A7K3P9V2` when OCR reads hyphens as spaces.
+**There is exactly one rule.** Find a marker on the label and take everything from
+after the colon up to the next whitespace, **verbatim**. No shape check, no
+confusable-character correction.
 
-**Search** — substring search, not whole-string match, so a serial surrounded by other
-text in the same box is still found.
+```
+S/N: DX-M1-A7K3P9V2  REV.C1
+     └──────┬──────┘
+       this much
+```
 
-| Rank | Pattern | Condition |
-|---|---|---|
-| 0 | `DX-?M1-?([A-Z0-9]{8})` | Canonical format |
-| 1 | `([A-Z]{2,4})-?([A-Z0-9]{6,12})` | Generic shape + ≥3 digits in the body |
-| 2 | Rank 0 re-applied to **all boxes concatenated** | Serial split across boxes |
-| 3 | `DX-?M1-?([A-Z0-9]{5,12})` + ≥2 digits | Wrong length; only if 0–2 all fail |
+| Input | Result |
+|---|---|
+| `S/N: ABC-9981-XYZ` | `ABC-9981-XYZ` |
+| `S/N: DX-M1-16716Y  REV.C1` | `DX-M1-16716Y` (cut at whitespace) |
+| `Serial: SO-BIG-2024` | `SO-BIG-2024` (`S` `O` `B` `I` untouched) |
+| `序列号：NPU-15674X` | `NPU-15674X` (full-width colon accepted) |
+| `s/n: dx-m1-c4m8t6hd` | `DX-M1-C4M8T6HD` (uppercased only) |
+| `S/N:QR-2025-0001` | `QR-2025-0001` (no space needed after the colon) |
+| `DX-M1-H8T4Y2MD` (no marker) | **not recognized** |
 
-A match must not start or end mid-alphanumeric. The digit requirement keeps caption
-text from being mistaken for a serial (`S/N: DX-M1 NPU MODULE` matches nothing).
+Markers — case-insensitive, space before the colon allowed, full-width colon (`：`)
+allowed:
 
-> **Serial naming rule** — avoid `O Q I L S B Z` in the body. The server corrects
-> OCR-confusable characters to digits (`O→0`, `I→1`, `S→5` …), so those letters in a
-> correct serial would corrupt an otherwise perfect read.
+| Language | Markers |
+|---|---|
+| English | `SN:` `S/N:` `S.N:` `SERIAL:` `SERIAL NO:` |
+| Korean | `시리얼:` `일련번호:` `제품번호:` |
+| Chinese | `序列号:` `序列號:` `序號:` `編號:` |
+| Japanese | `シリアル:` `製造番号:` |
+
+- Short markers like `SN` are checked for **word boundaries** so they don't match
+  inside another word.
+- If OCR splits `S/N:` and the serial into separate boxes, the first token of the
+  next box is used.
+- Trailing `.` `,` `;` `:` are stripped.
+
+> ⚠️ **A label without a marker is not recognized.** Nothing is guessed from shape
+> alone, so always print `S/N:` before the serial. In exchange there are no format
+> constraints at all — **any serial format** is read exactly as printed.
 
 ---
 
@@ -281,7 +289,7 @@ cd web && npm run dev
 ```
 
 Runs OCR on one image, prints the same JSON as `/api/scan`, and exits — handy when
-tuning the serial regexes or the confusable-character rules. See `--help` for all flags.
+tuning marker detection or the cut rule. See `--help` for all flags.
 
 ---
 
@@ -293,7 +301,7 @@ tuning the serial regexes or the confusable-character rules. See `--help` for al
 | Phone won't open the QR | ① same network? ② is `LAN base URL` in the log not `localhost`? ③ firewall on the port. The URL under the QR can be typed manually |
 | Never auto-freezes | Read the on-screen hint. `신뢰도 87% — 임계값 90% 미만` means move the label closer. Otherwise use `지금 바로 인식` |
 | Same number keeps appearing | Press `아니요` to skip it, then move the label away |
-| Wrong characters | Check the serial for `O Q I L S B Z` (see the naming rule) |
+| Nothing recognized | Check that the label carries an `S/N:` marker; without one nothing is recognized |
 | `DX-RT 없음` | Install DX-RT, then `DXRT_INSTALLED_DIR=/path ./build.sh` |
 | Model load fails | `ls models/*.dxnn` should list 8 files; re-clone if fewer |
 

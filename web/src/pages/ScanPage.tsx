@@ -168,20 +168,15 @@ export default function ScanPage() {
                 </div>
 
                 <p className="mt-3 text-sm text-dx-muted">
-                  라벨의 <code className="font-mono text-dx-text">S/N</code>,{' '}
-                  <code className="font-mono text-dx-text">SN</code>,{' '}
-                  <code className="font-mono text-dx-text">SERIAL</code>,{' '}
-                  <code className="font-mono text-dx-text">시리얼</code>,{' '}
-                  <code className="font-mono text-dx-text">序列号</code> 표기를 찾고,
-                  신뢰도 {live ? (live.autoConfidence * 100).toFixed(0) : 90}% 이상이면
+                  <code className="font-mono text-dx-text">S/N:</code>{' '}
+                  <code className="font-mono text-dx-text">SN:</code>{' '}
+                  <code className="font-mono text-dx-text">SERIAL:</code>{' '}
+                  <code className="font-mono text-dx-text">시리얼:</code>{' '}
+                  <code className="font-mono text-dx-text">序列号:</code> 뒤의 값을
+                  공백 전까지 그대로 읽습니다. 신뢰도{' '}
+                  {live ? (live.autoConfidence * 100).toFixed(0) : 90}% 이상이면
                   자동으로 화면을 멈춥니다.
                 </p>
-
-                {live && live.keywordHits.length > 0 && (
-                  <p className="mt-2 text-sm text-dx-cyan">
-                    표기 감지: {live.keywordHits.join(', ')}
-                  </p>
-                )}
 
                 {rejectedSerial ? (
                   <p className="mt-2 text-sm text-dx-amber">
@@ -230,8 +225,8 @@ export default function ScanPage() {
                   <span className="font-mono text-dx-text">
                     {result ? (result.confidence * 100).toFixed(1) : '—'}%
                   </span>
-                  {result && result.keywordHits.length > 0 && (
-                    <> · 표기 {result.keywordHits.join(', ')}</>
+                  {result?.candidates[0]?.prefix && (
+                    <> · 표기 {result.candidates[0].prefix}</>
                   )}
                 </p>
 

@@ -28,12 +28,9 @@ export default function SerialCandidates({ candidates, selected, onSelect }: Pro
           >
             <span className="min-w-0">
               <span className="block font-mono text-base font-semibold">{c.text}</span>
-              {c.normalized && (
-                // 혼동 문자 보정(O→0 등)이 일어났음을 데모에서 설명할 수 있게 표시
-                <span className="mt-0.5 block text-xs text-dx-amber">
-                  혼동 문자 보정됨 · 원본 &ldquo;{c.rawText}&rdquo;
-                </span>
-              )}
+              <span className="mt-0.5 block text-xs text-dx-muted">
+                {c.prefix} · &ldquo;{c.rawText}&rdquo;
+              </span>
             </span>
             <span className="shrink-0 font-mono text-sm text-dx-muted">
               {(c.score * 100).toFixed(1)}%

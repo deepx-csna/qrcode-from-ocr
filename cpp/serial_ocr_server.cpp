@@ -32,7 +32,6 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <regex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -173,13 +172,21 @@ std::string detectLanIPv4()
 }
 
 // ---------------------------------------------------------------------------
-// 시리얼 키워드 감지
+// 시리얼 추출
 //
-// 실시간 자동 인식에서 "이건 진짜 시리얼 라벨이다" 를 판정하는 근거.
-// 라벨에 흔히 붙는 표기를 한/영/중/일로 훑는다.
-// 정규화된 문자열이 아니라 OCR 원문에서 찾는다. toUpperAlnum 이 "S/N" 을
-// "S-N" 으로 바꿔 버리기 때문이다.
+// 규칙은 하나뿐이다.
+//   라벨에서 "S/N" / "SN" / "SERIAL" / "序列号" 같은 표기를 찾고,
+//   콜론(:) 뒤부터 다음 공백 전까지를 시리얼로 그대로 쓴다.
+//
+// 형태 검사도, 혼동 문자 보정도 하지 않는다. 라벨에 적힌 그대로가 정답이다.
 // ---------------------------------------------------------------------------
+
+struct SerialCandidate {
+    std::string text;     ///< 잘라낸 시리얼 (대문자)
+    std::string rawText;  ///< 잘라낸 원본 OCR 텍스트
+    std::string prefix;   ///< 매칭된 표기 ("S/N", "序列号" …)
+    double score = 0.0;
+};
 
 // ASCII 만 대문자로 올린다. UTF-8 멀티바이트(한글/중국어)는 건드리지 않는다.
 std::string upperAscii(const std::string& in)
@@ -194,278 +201,145 @@ std::string upperAscii(const std::string& in)
     return out;
 }
 
-// 짧은 ASCII 키워드("SN")가 다른 단어에 묻힌 경우를 걸러낸다.
-bool standaloneAt(const std::string& hay, std::size_t pos, std::size_t len)
+// 표기 뒤 콜론까지 건너뛴 위치를 돌려준다. 콜론이 없으면 npos.
+// 전각 콜론(U+FF1A, "：")도 받는다. 중국어 라벨에서 흔하다.
+std::size_t skipToAfterColon(const std::string& s, std::size_t pos)
 {
-    const auto isWordChar = [](char c) {
-        return std::isalnum(static_cast<unsigned char>(c)) != 0;
-    };
-    if (pos > 0 && isWordChar(hay[pos - 1])) {
-        return false;
+    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) {
+        ++pos;
     }
-    const std::size_t end = pos + len;
-    if (end < hay.size() && isWordChar(hay[end])) {
-        return false;
+    if (pos < s.size() && s[pos] == ':') {
+        return pos + 1;
     }
-    return true;
+    // "：" == EF BC 9A
+    if (pos + 2 < s.size() && static_cast<unsigned char>(s[pos]) == 0xEF &&
+        static_cast<unsigned char>(s[pos + 1]) == 0xBC &&
+        static_cast<unsigned char>(s[pos + 2]) == 0x9A) {
+        return pos + 3;
+    }
+    return std::string::npos;
 }
 
-/// 시리얼 표기가 들어 있으면 true. matched 에 찾은 표기를 담는다.
-bool containsSerialKeyword(const std::string& rawText, std::string* matched)
+// pos 부터 공백 전까지의 토큰. 시리얼에 올 수 없는 끝 문장부호는 떼어 낸다.
+std::string tokenAt(const std::string& s, std::size_t pos)
 {
-    // 멀티바이트 키워드는 원문 그대로 부분 문자열 검색한다.
-    static const char* kUnicodeKeywords[] = {
-        "시리얼", "일련번호", "제품번호",
+    const auto isSpace = [](char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    };
+    while (pos < s.size() && isSpace(s[pos])) {
+        ++pos;
+    }
+    std::size_t end = pos;
+    while (end < s.size() && !isSpace(s[end])) {
+        ++end;
+    }
+    std::string token = s.substr(pos, end - pos);
+    while (!token.empty() && (token.back() == '.' || token.back() == ',' ||
+                              token.back() == ';' || token.back() == ':')) {
+        token.pop_back();
+    }
+    return token;
+}
+
+/// texts[i] 에서 "표기:" 를 찾아 그 뒤 토큰을 뽑는다.
+/// 표기 박스가 콜론에서 끝나면 texts[i+1] 의 첫 토큰을 쓴다
+/// (OCR 이 "S/N:" 과 시리얼을 다른 박스로 쪼개는 경우).
+bool extractAfterPrefix(const std::vector<camocr::OcrText>& texts,
+                        std::size_t i,
+                        SerialCandidate* out)
+{
+    // ASCII 는 대문자로 올려 비교하므로 여기서도 대문자로 적는다.
+    // 긴 표기를 먼저 둬야 "SERIAL NO" 가 "SERIAL" 에 먹히지 않는다.
+    static const char* kAsciiPrefixes[] = {"SERIAL NO", "SERIAL", "S/N", "S.N", "SN"};
+    static const char* kUnicodePrefixes[] = {
         "序列号", "序列號", "序號", "編號",
+        "시리얼", "일련번호", "제품번호",
         "シリアル", "製造番号",
     };
-    for (const char* kw : kUnicodeKeywords) {
-        if (rawText.find(kw) != std::string::npos) {
-            *matched = kw;
-            return true;
-        }
-    }
 
-    // ASCII 키워드는 대문자로 올린 뒤 단어 경계까지 확인한다.
-    static const char* kAsciiKeywords[] = {"SERIAL NO", "SERIAL", "S/N", "S.N", "SN"};
-    const std::string upper = upperAscii(rawText);
-    for (const char* kw : kAsciiKeywords) {
+    const std::string& raw = texts[i].text;
+    const std::string upper = upperAscii(raw);
+
+    std::size_t bestPos = std::string::npos;
+    std::size_t afterColon = std::string::npos;
+    std::string matched;
+
+    const auto consider = [&](const std::string& hay, const char* kw, bool checkBoundary) {
         const std::size_t len = std::strlen(kw);
-        std::size_t pos = upper.find(kw);
+        std::size_t pos = hay.find(kw);
         while (pos != std::string::npos) {
-            if (standaloneAt(upper, pos, len)) {
-                *matched = kw;
-                return true;
+            const std::size_t after = skipToAfterColon(hay, pos + len);
+            // "SN" 처럼 짧은 ASCII 표기가 다른 단어에 묻힌 경우를 걸러낸다.
+            const bool boundaryOk =
+                !checkBoundary || pos == 0 ||
+                std::isalnum(static_cast<unsigned char>(hay[pos - 1])) == 0;
+            if (after != std::string::npos && boundaryOk && pos < bestPos) {
+                bestPos = pos;
+                afterColon = after;
+                matched = kw;
             }
-            pos = upper.find(kw, pos + 1);
+            pos = hay.find(kw, pos + 1);
         }
-    }
-    return false;
-}
-
-// ---------------------------------------------------------------------------
-// 시리얼 추출
-// ---------------------------------------------------------------------------
-
-struct SerialCandidate {
-    std::string text;
-    std::string rawText;
-    double score = 0.0;
-    bool normalized = false;
-    int priority = 99;  // 낮을수록 우선
-};
-
-// OCR 텍스트를 시리얼 탐색용으로 정규화한다.
-//
-// 영숫자는 대문자로 남기고, 그 밖의 문자(공백, ':', '/', '.', '_' …)는
-// 전부 '-' 하나로 접는다. 삭제하지 않는 것이 중요하다.
-// "S/N: DX-M1-A7K3P9V2" 에서 구분자를 지워 버리면 "SNDX-M1-..." 이 되어
-// 시리얼 토큰의 시작 경계가 사라진다.
-// 덤으로 OCR 이 하이픈을 공백으로 읽은 "DX M1 A7K3P9V2" 도 함께 복구된다.
-std::string toUpperAlnum(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size());
-    for (const char c : in) {
-        if (std::isalnum(static_cast<unsigned char>(c))) {
-            out += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        } else if (!out.empty() && out.back() != '-') {
-            out += '-';
-        }
-    }
-    while (!out.empty() && out.back() == '-') {
-        out.pop_back();
-    }
-    return out;
-}
-
-// 시리얼 본문 구간에서만 OCR 혼동 문자를 보정한다.
-// 접두사(DX-M1-)는 알파벳이 정상이므로 건드리지 않는다.
-std::string normalizeConfusables(const std::string& body, bool* changed)
-{
-    std::string out = body;
-    *changed = false;
-    for (char& c : out) {
-        char before = c;
-        switch (c) {
-        case 'O': c = '0'; break;
-        case 'Q': c = '0'; break;
-        case 'I': c = '1'; break;
-        case 'L': c = '1'; break;
-        case 'S': c = '5'; break;
-        case 'B': c = '8'; break;
-        case 'Z': c = '2'; break;
-        default: break;
-        }
-        if (before != c) {
-            *changed = true;
-        }
-    }
-    return out;
-}
-
-// 매칭이 영숫자 한가운데서 시작/끝나지 않는지 확인한다.
-// "XDX-M1-A7K3P9V2" 처럼 앞에 글자가 더 붙은 경우를 걸러낸다.
-bool onTokenBoundary(const std::string& hay, const std::smatch& m)
-{
-    const auto begin = static_cast<std::size_t>(m.position(0));
-    const auto end = begin + static_cast<std::size_t>(m.length(0));
-    const auto isBody = [](char c) {
-        return std::isalnum(static_cast<unsigned char>(c)) != 0;
     };
-    if (begin > 0 && isBody(hay[begin - 1])) {
+
+    for (const char* kw : kAsciiPrefixes) {
+        consider(upper, kw, true);
+    }
+    for (const char* kw : kUnicodePrefixes) {
+        consider(raw, kw, false);
+    }
+
+    if (afterColon == std::string::npos) {
         return false;
     }
-    if (end < hay.size() && isBody(hay[end])) {
+
+    std::string token = tokenAt(raw, afterColon);
+    std::string source = raw;
+
+    // 표기 박스가 콜론에서 끝났으면 다음 박스의 첫 토큰을 가져온다.
+    if (token.empty() && i + 1 < texts.size()) {
+        token = tokenAt(texts[i + 1].text, 0);
+        source = texts[i + 1].text;
+    }
+    if (token.empty()) {
         return false;
     }
+
+    out->text = upperAscii(token);
+    out->rawText = source;
+    out->prefix = matched;
+    out->score = texts[i].score;
     return true;
-}
-
-// hay 안에서 re 에 맞는 첫 토큰을 찾는다 (경계 조건 포함).
-bool findToken(const std::string& hay, const std::regex& re, std::smatch* out)
-{
-    auto it = std::sregex_iterator(hay.begin(), hay.end(), re);
-    const auto last = std::sregex_iterator();
-    for (; it != last; ++it) {
-        if (onTokenBoundary(hay, *it)) {
-            *out = *it;
-            return true;
-        }
-    }
-    return false;
-}
-
-int countDigits(const std::string& s)
-{
-    return static_cast<int>(std::count_if(s.begin(), s.end(), [](unsigned char ch) {
-        return std::isdigit(ch) != 0;
-    }));
 }
 
 std::vector<SerialCandidate> extractSerials(const std::vector<camocr::OcrText>& texts)
 {
-    // regex_match(전체 일치)가 아니라 regex_search(부분 탐색)를 쓴다.
-    // 실제 라벨은 "S/N: DX-M1-A7K3P9V2" 처럼 시리얼 앞뒤에 다른 문구가
-    // 같은 텍스트 박스로 묶여 나오는 경우가 대부분이기 때문이다.
-    //
-    //   P0  정식 포맷, 본문 정확히 8자          -> 가장 신뢰
-    //   P1  일반 시리얼 형태 + 본문 숫자 3개 이상
-    //   P2  박스가 쪼개진 경우 (전체를 이어 붙여 재탐색)
-    //   P3  자릿수가 어긋난 정식 포맷           -> 최소한 무엇을 읽었는지 보여준다
-    static const std::regex kPrimary(R"(DX-?M1-?([A-Z0-9]{8}))");
-    static const std::regex kGeneric(R"(([A-Z]{2,4})-?([A-Z0-9]{6,12}))");
-    static const std::regex kLoose(R"(DX-?M1-?([A-Z0-9]{5,12}))");
-
     std::vector<SerialCandidate> out;
 
-    const auto push = [&out](std::string text,
-                             const std::string& rawText,
-                             double score,
-                             bool normalized,
-                             int priority) {
+    for (std::size_t i = 0; i < texts.size(); ++i) {
         SerialCandidate c;
-        c.text = std::move(text);
-        c.rawText = rawText;
-        c.score = score;
-        c.normalized = normalized;
-        c.priority = priority;
-        out.push_back(std::move(c));
-    };
-
-    // 느슨한 패턴으로 찾은 것은 따로 모아 둔다.
-    // 제대로 된 후보가 하나라도 있으면 이건 군더더기이므로 버린다.
-    std::vector<SerialCandidate> loose;
-
-    std::string joined;
-    joined.reserve(64);
-
-    for (const auto& t : texts) {
-        const std::string cleaned = toUpperAlnum(t.text);
-        joined += cleaned;
-        if (cleaned.size() < 6) {
+        if (!extractAfterPrefix(texts, i, &c)) {
             continue;
         }
-
-        std::smatch m;
-
-        if (findToken(cleaned, kPrimary, &m)) {
-            bool changed = false;
-            const std::string body = normalizeConfusables(m[1].str(), &changed);
-            push("DX-M1-" + body, t.text, t.score, changed, 0);
-            continue;
-        }
-
-        if (findToken(cleaned, kGeneric, &m)) {
-            const std::string rawBody = m[2].str();
-            // 라벨의 설명 문구가 일반 패턴에 걸리는 것을 막는다.
-            // "S/N:DX-M1 NPU MODULE" -> "SNDX-M1NPUMODULE" 은 형태상 매칭되지만
-            // 시리얼이 아니다. 실제 시리얼 본문은 숫자를 여러 개 포함한다.
-            if (countDigits(rawBody) >= 3) {
-                bool changed = false;
-                const std::string body = normalizeConfusables(rawBody, &changed);
-                push(m[1].str() + "-" + body, t.text, t.score, changed, 1);
-                continue;
-            }
-        }
-
-        // 자릿수가 어긋난 정식 포맷. 본문에 숫자가 없으면 설명 문구
-        // ("DX-M1 NPU MODULE" 등)일 가능성이 높으므로 제외한다.
-        if (findToken(cleaned, kLoose, &m) && countDigits(m[1].str()) >= 2) {
-            bool changed = false;
-            const std::string body = normalizeConfusables(m[1].str(), &changed);
-            SerialCandidate c;
-            c.text = "DX-M1-" + body;
-            c.rawText = t.text;
-            c.score = t.score;
-            c.normalized = changed;
-            c.priority = 3;
-            loose.push_back(std::move(c));
-        }
-    }
-
-    // 제대로 된 후보가 없을 때만 느슨한 결과를 쓴다.
-    if (out.empty()) {
-        out = std::move(loose);
-    }
-
-    // 시리얼이 여러 박스로 쪼개져 읽힌 경우("DX-M1-" + "A7K3P9V2").
-    // 앞선 단계에서 아무것도 못 찾았을 때만 시도한다.
-    if (out.empty()) {
-        std::smatch m;
-        if (findToken(joined, kPrimary, &m)) {
-            bool changed = false;
-            const std::string body = normalizeConfusables(m[1].str(), &changed);
-            push("DX-M1-" + body, joined, 0.0, changed, 2);
-        }
-    }
-
-    std::stable_sort(out.begin(), out.end(), [](const SerialCandidate& a, const SerialCandidate& b) {
-        if (a.priority != b.priority) {
-            return a.priority < b.priority;
-        }
-        return a.score > b.score;
-    });
-
-    // 같은 시리얼이 여러 박스에서 잡히면 최고 점수만 남긴다.
-    std::vector<SerialCandidate> unique;
-    for (auto& c : out) {
-        const bool dup = std::any_of(unique.begin(), unique.end(), [&](const SerialCandidate& u) {
+        const bool dup = std::any_of(out.begin(), out.end(), [&](const SerialCandidate& u) {
             return u.text == c.text;
         });
         if (!dup) {
-            unique.push_back(std::move(c));
+            out.push_back(std::move(c));
         }
     }
-    return unique;
+
+    // 같은 시리얼이 여러 박스에서 잡히면 점수가 높은 쪽을 앞으로.
+    std::stable_sort(out.begin(), out.end(),
+                     [](const SerialCandidate& a, const SerialCandidate& b) {
+                         return a.score > b.score;
+                     });
+    return out;
 }
 
-// OCR 결과 + 시리얼 후보를 스캔 응답 JSON 으로 만든다.
-// HTTP 핸들러와 --test-image 경로가 같은 포맷을 쓰도록 한 곳에 모아 둔다.
-// OCR 결과에서 시리얼 후보와 자동 캡처 판정을 뽑아낸다.
+// OCR 결과에서 시리얼과 자동 캡처 판정을 뽑아낸다.
 struct ScanAnalysis {
     std::vector<SerialCandidate> candidates;
-    std::vector<std::string> keywordHits;
     bool autoCapture = false;
     std::string autoReason = "none";
     double autoConfidence = 0.90;
@@ -477,44 +351,15 @@ ScanAnalysis analyzeScan(const camocr::OcrResult& result, double autoConfidence)
     a.autoConfidence = autoConfidence;
     a.candidates = extractSerials(result.texts);
 
-    // --- 시리얼 키워드 (S/N, 시리얼, 序列号 …) ---------------------------
-    bool keywordSameBox = false;
-    for (const auto& t : result.texts) {
-        std::string matched;
-        if (!containsSerialKeyword(t.text, &matched)) {
-            continue;
-        }
-        if (std::find(a.keywordHits.begin(), a.keywordHits.end(), matched) == a.keywordHits.end()) {
-            a.keywordHits.push_back(matched);
-        }
-        // 시리얼과 같은 텍스트 박스에 있으면 가장 강한 근거다.
-        if (!a.candidates.empty() && t.text == a.candidates.front().rawText) {
-            keywordSameBox = true;
-        }
-    }
-
-    // --- 자동 캡처 판정 ---------------------------------------------------
     // 실시간 모드에서 화면을 멈출지 결정한다.
-    //   조건 1) 신뢰도가 임계값(기본 90%) 이상
-    //   조건 2) 시리얼 키워드가 보이거나, 정식 포맷(DX-M1-XXXXXXXX)으로 읽혔을 것
+    // 표기 뒤에서 잘라냈다는 것 자체가 충분한 근거이므로, 남은 조건은 신뢰도뿐이다.
     if (a.candidates.empty()) {
-        return a;
-    }
-
-    const SerialCandidate& top = a.candidates.front();
-    if (top.score < autoConfidence) {
+        a.autoReason = "no_serial";
+    } else if (a.candidates.front().score < autoConfidence) {
         a.autoReason = "low_confidence";
-    } else if (keywordSameBox) {
-        a.autoCapture = true;
-        a.autoReason = "keyword_same_box";
-    } else if (!a.keywordHits.empty()) {
-        a.autoCapture = true;
-        a.autoReason = "keyword";
-    } else if (top.priority == 0) {
-        a.autoCapture = true;
-        a.autoReason = "strict_format";
     } else {
-        a.autoReason = "no_keyword";
+        a.autoCapture = true;
+        a.autoReason = "ok";
     }
     return a;
 }
@@ -545,8 +390,8 @@ std::string buildScanJson(const camocr::OcrResult& result,
             oss << ",";
         }
         oss << "{\"text\":" << jsonStr(c.text) << ",\"rawText\":" << jsonStr(c.rawText)
-            << ",\"score\":" << jsonNum(c.score, 4)
-            << ",\"normalized\":" << (c.normalized ? "true" : "false") << "}";
+            << ",\"prefix\":" << jsonStr(c.prefix)
+            << ",\"score\":" << jsonNum(c.score, 4) << "}";
     }
     oss << "]";
 
@@ -571,19 +416,12 @@ std::string buildScanJson(const camocr::OcrResult& result,
     oss << ",\"autoCapture\":" << (a.autoCapture ? "true" : "false");
     oss << ",\"autoReason\":" << jsonStr(a.autoReason);
     oss << ",\"autoConfidence\":" << jsonNum(a.autoConfidence, 2);
-    oss << ",\"keywordHits\":[";
-    for (std::size_t i = 0; i < a.keywordHits.size(); ++i) {
-        if (i > 0) {
-            oss << ",";
-        }
-        oss << jsonStr(a.keywordHits[i]);
-    }
-    oss << "]";
 
     oss << ",\"frame\":" << jsonStr(frameB64);
     oss << "}";
     return oss.str();
 }
+
 
 // ---------------------------------------------------------------------------
 // 카메라 워커

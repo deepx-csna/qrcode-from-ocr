@@ -5,8 +5,9 @@ import type { DeviceInfo } from '../data/devices'
 export interface SerialCandidate {
   text: string
   rawText: string
+  /** 이 시리얼을 뽑아낸 표기 ("S/N", "序列号" …) */
+  prefix: string
   score: number
-  normalized: boolean
 }
 
 export interface OcrPerf {
@@ -19,13 +20,11 @@ export interface OcrPerf {
   cps: number
 }
 
-/** 서버가 화면을 멈추라고 판단한 근거. */
+/** 서버의 자동 캡처 판정 결과. */
 export type AutoReason =
-  | 'keyword_same_box'
-  | 'keyword'
-  | 'strict_format'
-  | 'low_confidence'
-  | 'no_keyword'
+  | 'ok'             // 표기 뒤에서 잘라냈고 신뢰도도 충분하다
+  | 'low_confidence' // 잘라내긴 했지만 신뢰도가 임계값 미만
+  | 'no_serial'      // 표기를 찾지 못했다
   | 'none'
 
 export interface ScanResponse {
@@ -41,8 +40,6 @@ export interface ScanResponse {
   autoReason: AutoReason
   /** 자동 캡처 최소 신뢰도 (서버 설정, 기본 0.9) */
   autoConfidence: number
-  /** 프레임에서 발견된 시리얼 표기 (S/N, 序列号 …) */
-  keywordHits: string[]
   /** 스캔 시점 프레임 (base64 JPEG, data: 접두사 없음) */
   frame?: string
 }
@@ -93,10 +90,8 @@ export function autoReasonToMessage(res: ScanResponse): string {
       return `신뢰도 ${(res.confidence * 100).toFixed(0)}% — 임계값 ${(
         res.autoConfidence * 100
       ).toFixed(0)}% 미만입니다. 라벨을 더 가까이, 정면으로 비추세요.`
-    case 'no_keyword':
-      return '시리얼 형태는 찾았지만 S/N 같은 표기가 없어 확정하지 않았습니다.'
-    case 'none':
-      return '시리얼을 찾는 중…'
+    case 'no_serial':
+      return 'S/N 표기를 찾는 중…'
     default:
       return ''
   }
