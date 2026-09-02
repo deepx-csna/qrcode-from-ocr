@@ -146,16 +146,6 @@ S/N: DX-M1-A7K3P9V2  REV.C1
        this much
 ```
 
-| Input | Result |
-|---|---|
-| `S/N: ABC-9981-XYZ` | `ABC-9981-XYZ` |
-| `S/N: DX-M1-16716Y  REV.C1` | `DX-M1-16716Y` (cut at whitespace) |
-| `Serial: SO-BIG-2024` | `SO-BIG-2024` (`S` `O` `B` `I` untouched) |
-| `序列号：NPU-15674X` | `NPU-15674X` (full-width colon accepted) |
-| `s/n: dx-m1-c4m8t6hd` | `DX-M1-C4M8T6HD` (uppercased only) |
-| `S/N:QR-2025-0001` | `QR-2025-0001` (no space needed after the colon) |
-| `DX-M1-H8T4Y2MD` (no marker) | **not recognized** |
-
 Markers — case-insensitive, space before the colon allowed, full-width colon (`：`)
 allowed:
 
@@ -175,6 +165,49 @@ allowed:
 > ⚠️ **A label without a marker is not recognized.** Nothing is guessed from shape
 > alone, so always print `S/N:` before the serial. In exchange there are no format
 > constraints at all — **any serial format** is read exactly as printed.
+
+### Verified behaviour
+
+Measured on an actual **DX-M1 NPU**. To reproduce, run
+`./cpp/build/serial_ocr_server --test-image <image>`.
+
+**Rule behaviour**
+
+| Input (as printed on the label) | Result | Confidence | Marker |
+|---|---|---|---|
+| `SN: DX-M1-A7K3P9V2` | `DX-M1-A7K3P9V2` | 0.9913 | `SN` |
+| `S/N: ABC-9981-XYZ` | `ABC-9981-XYZ` | 0.9762 | `S/N` |
+| `序列号：NPU-15674X` | `NPU-15674X` | 0.9921 | `序列号` |
+| `Serial: SO-BIG-2024` | `SO-BIG-2024` | 0.9775 | `SERIAL` |
+| `S/N: DX-M1-16716Y  REV.C1` | `DX-M1-16716Y` | 0.9856 | `S/N` |
+| `s/n: dx-m1-c4m8t6hd` | `DX-M1-C4M8T6HD` | 0.9776 | `S/N` |
+| `S/N:QR-2025-0001` | `QR-2025-0001` | 0.9999 | `S/N` |
+| `S/N: DX-M1 NPU MODULE` | `DX-M1` | 0.9741 | `S/N` |
+| `DX-M1-H8T4Y2MD` (no marker) | — (`no_serial`) | — | — |
+
+Things to note:
+
+- `Serial: SO-BIG-2024` comes back with **`SO-BIG` intact**. The previous
+  implementation corrupted it to `50-81G` through confusable-character
+  correction — that bug is why the rule was replaced.
+- `REV.C1` trailing on the same line is **cut at the whitespace**.
+- Full-width colon (`：`), lowercase input and a missing space after the colon
+  are all handled.
+- The last two rows are **intended behaviour**: the first token after `S/N:` is
+  `DX-M1`, and a label with no marker is not guessed at.
+
+**Bundled label sheet (`assets/serial_labels.png`), 8 labels**
+
+| | |
+|---|---|
+| Accuracy | **8 / 8** |
+| Confidence | 0.9947 – 0.9991 |
+| Detection | 149.6 ms avg |
+| Recognition | 11.4 ms avg |
+| End to end | 188.2 ms avg |
+
+Measured on x86_64, Ubuntu 22.04, OpenCV 4.5.4, GCC 11.4, DX-M1 (M1A).
+
 
 ---
 
