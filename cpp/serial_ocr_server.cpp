@@ -954,10 +954,40 @@ int main(int argc, char** argv)
                   << "./build.sh 로 프론트엔드를 빌드하세요." << std::endl;
     }
 
+    // 캐시 정책.
+    //
+    // index.html 을 캐시하면 재빌드 후 브라우저가 옛 해시 에셋을 요청한다.
+    // 그 파일은 이미 없으므로, 아래 SPA 폴백까지 겹치면 CSS/JS 자리에 HTML 이
+    // 200 으로 돌아가 화면이 통째로 깨진다. Chrome 은 캐시 헤더가 없으면
+    // HTML 을 임의로 캐시하므로 반드시 막아야 한다.
+    server.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (req.path.rfind("/api/", 0) == 0) {
+            res.set_header("Cache-Control", "no-store");
+        } else if (req.path.rfind("/assets/", 0) == 0) {
+            // 파일명에 콘텐츠 해시가 들어 있어 영구 캐시해도 안전하다.
+            res.set_header("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+            res.set_header("Cache-Control", "no-store, must-revalidate");
+        }
+    });
+
+    // 경로의 마지막 조각에 확장자가 있으면 정적 파일 요청으로 본다.
+    const auto looksLikeFile = [](const std::string& path) {
+        const std::size_t slash = path.rfind('/');
+        const std::string leaf = slash == std::string::npos ? path : path.substr(slash + 1);
+        return leaf.find('.') != std::string::npos;
+    };
+
     const fs::path indexPath = args.webRoot / "index.html";
     server.set_error_handler([&](const httplib::Request& req, httplib::Response& res) {
         // SPA 라우팅(/device/xxx 직접 진입, 새로고침)을 위해 index.html 로 폴백한다.
         if (res.status != 404 || req.method != "GET" || req.path.rfind("/api/", 0) == 0) {
+            return;
+        }
+        // 정적 파일 요청에는 폴백하지 않는다. 없는 .js/.css 자리에 HTML 을
+        // 돌려주면 브라우저가 그것을 파싱하다 실패해, 단순한 404 가 화면 전체
+        // 장애로 번진다. 404 를 그대로 남겨 원인이 드러나게 한다.
+        if (req.path.rfind("/assets/", 0) == 0 || looksLikeFile(req.path)) {
             return;
         }
         if (!fs::exists(indexPath)) {

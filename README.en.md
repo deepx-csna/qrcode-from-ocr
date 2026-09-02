@@ -346,6 +346,7 @@ tuning marker detection or the cut rule. See `--help` for all flags.
 
 | Symptom | Check |
 |---|---|
+| Broken layout or no camera | The browser was holding a cached bundle after a rebuild. The server now sends `no-store` for `index.html`. If it still looks wrong, `Ctrl+Shift+R` |
 | No camera image | `v4l2-ctl --list-devices`. The node that lists formats is the capture node. Then `./run.sh --device /dev/videoN` |
 | Phone won't open the QR | ① same network? ② is `LAN base URL` in the log not `localhost`? ③ firewall on the port. The URL under the QR can be typed manually |
 | Never auto-freezes | Read the on-screen hint. `신뢰도 87% — 임계값 90% 미만` means move the label closer. Otherwise use `지금 바로 인식` |
