@@ -136,8 +136,6 @@ turns `S/N` into `S-N`.
 
 - **Polling** — the frontend calls `/api/scan` sequentially (not `setInterval`).
   OCR is serialized server-side, so overlapping requests would only queue up.
-- **FPS readout** — a rolling average over the last 10 scans (typically 3–4 fps).
-  Time spent frozen on the confirm screen is excluded.
 - **Bandwidth** — live polling uses `?frame=0` to skip the ~80 KB base64 JPEG.
   The server attaches the image **only for the frame that triggered auto-capture**.
 - **Rejected serials are skipped** — pressing `아니요` remembers that serial, so the

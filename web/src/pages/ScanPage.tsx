@@ -10,8 +10,6 @@ import { useDevice, useDevices } from '../hooks/useDevice'
 /** 실시간 스캔 간격. OCR 자체가 ~200ms 라 사실상 연속으로 돈다. */
 const POLL_INTERVAL_MS = 150
 
-/** FPS 를 평균낼 최근 스캔 수. */
-const FPS_WINDOW = 10
 
 export default function ScanPage() {
   const navigate = useNavigate()
@@ -22,7 +20,6 @@ export default function ScanPage() {
   const [result, setResult] = useState<ScanResponse | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [live, setLive] = useState<ScanResponse | null>(null)
-  const [fps, setFps] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -34,9 +31,6 @@ export default function ScanPage() {
   // 같은 번호를 즉시 다시 잡아 확인 화면이 무한히 반복되기 때문에 건너뛴다.
   const rejectedRef = useRef<Set<string>>(new Set())
   const [rejectedSerial, setRejectedSerial] = useState<string | null>(null)
-
-  // 최근 스캔 완료 시각. 순간 FPS 가 아니라 이 구간의 평균을 보여 준다.
-  const stampsRef = useRef<number[]>([])
 
   const capture = useCallback((res: ScanResponse) => {
     setResult(res)
@@ -53,10 +47,6 @@ export default function ScanPage() {
     let cancelled = false
     const controller = new AbortController()
 
-    // 확인 화면에 멈춰 있던 시간이 평균에 섞이지 않도록 버퍼를 비우고 시작한다.
-    stampsRef.current = []
-    setFps(null)
-
     const loop = async () => {
       while (!cancelled && modeRef.current === 'live') {
         try {
@@ -65,17 +55,6 @@ export default function ScanPage() {
 
           setLive(res)
           setError(null)
-
-          // 최근 스캔들의 평균 FPS. 한 번의 지연으로 숫자가 튀지 않게 한다.
-          const stamps = stampsRef.current
-          stamps.push(performance.now())
-          if (stamps.length > FPS_WINDOW) {
-            stamps.shift()
-          }
-          if (stamps.length >= 2) {
-            const elapsed = stamps[stamps.length - 1] - stamps[0]
-            setFps(elapsed > 0 ? ((stamps.length - 1) * 1000) / elapsed : null)
-          }
 
           if (res.autoCapture && res.serial) {
             if (rejectedRef.current.has(res.serial)) {
@@ -92,9 +71,6 @@ export default function ScanPage() {
           if (cancelled || controller.signal.aborted) return
           setError(e instanceof Error ? e.message : String(e))
           // 서버가 죽었을 때 초당 수십 번 때리지 않도록 잠시 쉰다.
-          // 이 대기 시간이 평균에 섞이면 FPS 가 왜곡되므로 버퍼를 비운다.
-          stampsRef.current = []
-          setFps(null)
           await new Promise((r) => setTimeout(r, 1500))
         }
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
@@ -189,9 +165,6 @@ export default function ScanPage() {
                     <span className="relative inline-flex h-3 w-3 rounded-full bg-dx-cyan" />
                   </span>
                   <span className="font-semibold">실시간 인식 중</span>
-                  <span className="ml-auto font-mono text-xs text-dx-muted">
-                    {fps === null ? '— fps' : `${fps.toFixed(1)} fps`}
-                  </span>
                 </div>
 
                 <p className="mt-3 text-sm text-dx-muted">
